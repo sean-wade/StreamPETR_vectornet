@@ -261,6 +261,14 @@ def _fill_trainval_infos(nusc,
                 if names[i] in NuScenesDataset.NameMapping:
                     names[i] = NuScenesDataset.NameMapping[names[i]]
             names = np.array(names)
+
+            # update valid now, add by zh(ViP3D)
+            name_in_track = [_a in nus_categories for _a in names]
+            name_in_track = np.array(name_in_track)
+            valid_flag = np.logical_and(valid_flag, name_in_track)
+            # add instance_ids, add by zh(ViP3D)
+            instance_inds = [nusc.getind('instance', ann['instance_token']) for ann in annotations]
+
             # we need to convert box size to
             # the format of our lidar coordinate system
             # which is x_size, y_size, z_size (corresponding to l, w, h)
@@ -275,6 +283,7 @@ def _fill_trainval_infos(nusc,
             info['num_radar_pts'] = np.array(
                 [a['num_radar_pts'] for a in annotations])
             info['valid_flag'] = valid_flag
+            info['instance_inds'] = instance_inds  # add by zh(ViP3D)
 
             gt_2dbboxes_cams = []
             gt_3dbboxes_cams = []

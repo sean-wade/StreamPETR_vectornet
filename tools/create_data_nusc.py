@@ -37,7 +37,7 @@ parser.add_argument(
 parser.add_argument(
     '--version',
     type=str,
-    default='v1.0',
+    default='v1.0-mini',
     required=False,
     help='specify the dataset version, no need for kitti')
 parser.add_argument(

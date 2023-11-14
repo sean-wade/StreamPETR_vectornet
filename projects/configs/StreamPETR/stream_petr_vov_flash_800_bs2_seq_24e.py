@@ -18,14 +18,17 @@ class_names = [
     'motorcycle', 'bicycle', 'pedestrian', 'traffic_cone'
 ]
 
-num_gpus = 8
-batch_size = 2
-num_iters_per_epoch = 28130 // (num_gpus * batch_size)
-num_epochs = 24
+num_gpus = 1
+batch_size = 1
+num_workers = 1
+# num_iters_per_epoch = 28130 // (num_gpus * batch_size)
+num_iters_per_epoch = 323 // (num_gpus * batch_size)
+num_epochs = 100
 
 queue_length = 1
 num_frame_losses = 1
-collect_keys=['lidar2img', 'intrinsics', 'extrinsics','timestamp', 'img_timestamp', 'ego_pose', 'ego_pose_inv']
+collect_keys_pred = ['pred_mapping', 'pred_matrix', 'pred_polyline_spans', 'instance_idx_2_labels']
+collect_keys=['lidar2img', 'intrinsics', 'extrinsics','timestamp', 'img_timestamp', 'ego_pose', 'ego_pose_inv'] + collect_keys_pred
 input_modality = dict(
     use_lidar=False,
     use_camera=True,
@@ -163,7 +166,8 @@ train_pipeline = [
     dict(type='LoadMultiViewImageFromFiles', to_float32=True),
     dict(type='LoadAnnotations3D', with_bbox_3d=True, with_label_3d=True, with_bbox=True,
         with_label=True, with_bbox_depth=True),
-    dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
+    dict(type='InstanceRangeFilter', point_cloud_range=point_cloud_range),
+    # dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='ObjectNameFilter', classes=class_names),
     dict(type='ResizeCropFlipRotImage', data_aug_conf = ida_aug_conf, training=True),
     dict(type='GlobalRotScaleTransImage',
@@ -202,11 +206,11 @@ test_pipeline = [
 
 data = dict(
     samples_per_gpu=batch_size,
-    workers_per_gpu=4,
+    workers_per_gpu=num_workers,
     train=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + 'nuscenes2d_temporal_infos_train.pkl',
+        ann_file=data_root + 'nuscenes2d_with_id_temporal_infos_train.pkl',
         num_frame_losses=num_frame_losses,
         seq_split_num=2, # streaming video training
         seq_mode=True, # streaming video training
@@ -219,8 +223,8 @@ data = dict(
         use_valid_flag=True,
         filter_empty_gt=False,
         box_type_3d='LiDAR'),
-    val=dict(type=dataset_type, pipeline=test_pipeline, collect_keys=collect_keys + ['img', 'img_metas'], queue_length=queue_length, ann_file=data_root + 'nuscenes2d_temporal_infos_val.pkl', classes=class_names, modality=input_modality),
-    test=dict(type=dataset_type, pipeline=test_pipeline, collect_keys=collect_keys + ['img', 'img_metas'], queue_length=queue_length, ann_file=data_root + 'nuscenes2d_temporal_infos_val.pkl', classes=class_names, modality=input_modality),
+    val=dict(type=dataset_type, test_mode=True, pipeline=test_pipeline, collect_keys=collect_keys + ['img', 'img_metas'], queue_length=queue_length, ann_file=data_root + 'nuscenes2d_with_id_temporal_infos_val.pkl', classes=class_names, modality=input_modality),
+    test=dict(type=dataset_type, test_mode=True, pipeline=test_pipeline, collect_keys=collect_keys + ['img', 'img_metas'], queue_length=queue_length, ann_file=data_root + 'nuscenes2d_with_id_temporal_infos_val.pkl', classes=class_names, modality=input_modality),
     shuffler_sampler=dict(type='InfiniteGroupEachSampleInBatchSampler'),
     nonshuffler_sampler=dict(type='DistributedSampler')
     )
@@ -250,5 +254,6 @@ find_unused_parameters=False #### when use checkpoint, find_unused_parameters mu
 checkpoint_config = dict(interval=num_iters_per_epoch, max_keep_ckpts=3)
 runner = dict(
     type='IterBasedRunner', max_iters=num_epochs * num_iters_per_epoch)
-load_from='ckpts/fcos3d_vovnet_imgbackbone-remapped.pth'
+# load_from='ckpts/fcos3d_vovnet_imgbackbone-remapped.pth'
+load_from=None
 resume_from=None

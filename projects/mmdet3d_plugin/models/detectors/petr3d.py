@@ -10,6 +10,7 @@
 #  Modified by Shihao Wang
 # ------------------------------------------------------------------------
 import torch
+import torch.nn as nn
 from mmcv.runner import force_fp32, auto_fp16
 from mmdet.models import DETECTORS
 from mmdet3d.core import bbox3d2result
@@ -43,7 +44,16 @@ class Petr3D(MVXTwoStageDetector):
                  position_level=0,
                  aux_2d_only=True,
                  single_test=False,
-                 pretrained=None):
+                 pretrained=None,
+                 # for prediction
+                 do_pred=False,
+                 pred_embed_dims=256,
+                 relative_pred=False,
+                 agents_layer_0=False,
+                 agents_layer_0_num=2,
+                 add_branch=False,
+                 predictor=None,
+                 ):
         super(Petr3D, self).__init__(pts_voxel_layer, pts_voxel_encoder,
                              pts_middle_encoder, pts_fusion_layer,
                              img_backbone, pts_backbone, img_neck, pts_neck,
@@ -59,6 +69,20 @@ class Petr3D(MVXTwoStageDetector):
         self.stride = stride
         self.position_level = position_level
         self.aux_2d_only = aux_2d_only
+
+        self.do_pred = do_pred
+        self.pred_embed_dims = pred_embed_dims
+        self.relative_pred = relative_pred
+        self.agents_layer_0 = agents_layer_0
+        self.add_branch = add_branch
+        if self.do_pred:
+            from ..predictor.predictor_vectornet import VectorNet
+            self.predictor = VectorNet(**predictor)
+            self.empty_linear = nn.Linear(pred_embed_dims, pred_embed_dims)
+
+            if self.agents_layer_0:
+                from ..predictor import predictor_lib
+                self.agents_layer_mlp_0 = nn.Sequential(*[predictor_lib.MLP(256, 256) for _ in range(agents_layer_0_num)])
 
 
     def extract_img_feat(self, img, len_queue=1, training_mode=False):
@@ -100,6 +124,7 @@ class Petr3D(MVXTwoStageDetector):
         img_feats = self.extract_img_feat(img, T, training_mode)
         return img_feats
 
+
     def obtain_history_memory(self,
                             gt_bboxes_3d=None,
                             gt_labels_3d=None,
@@ -119,7 +144,8 @@ class Petr3D(MVXTwoStageDetector):
             return_losses = False
             data_t = dict()
             for key in data:
-                data_t[key] = data[key][:, i] 
+                if key not in ['pred_mapping', 'pred_matrix', 'pred_polyline_spans', 'instance_idx_2_labels']:    # for pred.
+                    data_t[key] = data[key][:, i] 
 
             data_t['img_feats'] = data_t['img_feats']
             if i >= num_nograd_frames:
@@ -141,6 +167,7 @@ class Petr3D(MVXTwoStageDetector):
         x = data['img_feats'].flatten(0, 1)
         location = locations(x, self.stride, pad_h, pad_w)[None].repeat(bs*n, 1, 1, 1)
         return location
+
 
     def forward_roi_head(self, location, **data):
         if (self.aux_2d_only and not self.training) or not self.with_img_roi_head:
@@ -199,6 +226,7 @@ class Petr3D(MVXTwoStageDetector):
         else:
             return None
 
+
     @force_fp32(apply_to=('img'))
     def forward(self, return_loss=True, **data):
         """Calls either forward_train or forward_test depending on whether
@@ -215,7 +243,10 @@ class Petr3D(MVXTwoStageDetector):
                 data[key] = list(zip(*data[key]))
             return self.forward_train(**data)
         else:
+            if self.do_pred:
+                self.predictor.decoder.do_eval = True
             return self.forward_test(**data)
+
 
     def forward_train(self,
                       img_metas=None,
@@ -278,11 +309,13 @@ class Petr3D(MVXTwoStageDetector):
                 raise TypeError('{} must be a list, but got {}'.format(
                     name, type(var)))
         for key in data:
-            if key != 'img':
+            # if key != 'img':
+            if key not in ['img', 'pred_mapping', 'pred_matrix', 'pred_polyline_spans', 'instance_idx_2_labels']:    # for pred.
                 data[key] = data[key][0][0].unsqueeze(0)
             else:
                 data[key] = data[key][0]
         return self.simple_test(img_metas[0], **data)
+
 
     def simple_test_pts(self, img_metas, **data):
         """Test function of point cloud branch."""
@@ -305,7 +338,8 @@ class Petr3D(MVXTwoStageDetector):
             for bboxes, scores, labels in bbox_list
         ]
         return bbox_results
-    
+
+
     def simple_test(self, img_metas, **data):
         """Test function without augmentaiton."""
         data['img_feats'] = self.extract_img_feat(data['img'], 1)

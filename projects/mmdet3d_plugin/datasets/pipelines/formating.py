@@ -33,6 +33,7 @@ class PETRFormatBundle3D(DefaultFormatBundle):
         self.with_gt = with_gt
         self.with_label = with_label
         self.collect_keys = collect_keys
+
     def __call__(self, results):
         """Call function to transform and format common fields in results.
 
@@ -51,6 +52,8 @@ class PETRFormatBundle3D(DefaultFormatBundle):
         for key in self.collect_keys:
             if key in ['timestamp',  'img_timestamp']:
                  results[key] = DC(to_tensor(np.array(results[key], dtype=np.float64)))
+            elif key in ['pred_mapping', 'pred_polyline_spans', 'instance_idx_2_labels']:
+                results[key] = DC(results[key], cpu_only=True)
             else:
                  results[key] = DC(to_tensor(np.array(results[key], dtype=np.float32)))
 
@@ -101,7 +104,8 @@ class PETRFormatBundle3D(DefaultFormatBundle):
                         self.class_names.index(n)
                         for n in results['gt_names_3d']
                     ],
-                                                       dtype=np.int64)
+                    dtype=np.int64)
+
         results = super(PETRFormatBundle3D, self).__call__(results)
         return results
 
