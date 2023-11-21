@@ -395,10 +395,12 @@ class Petr3D(MVXTwoStageDetector):
 
         B = len(data["pred_mapping"])
         batch_pred_outputs, batch_pred_probs = [], []
-        batch_loss = 0.0
+        batch_loss = torch.zeros(1, device=memory.device)
         for bb in range(B):
             mapping = data["pred_mapping"][bb]
             if not mapping['valid_pred']:
+                batch_pred_outputs.append(None)
+                batch_pred_probs.append(None)
                 continue
             
             future_traj             = data['future_traj'][bb]
@@ -416,13 +418,13 @@ class Petr3D(MVXTwoStageDetector):
                                             pred_mapping=[mapping]
                                             )
             batch_loss += loss
-            batch_pred_outputs.append(pred_outputs['pred_outputs'])
-            batch_pred_probs.append(pred_outputs['pred_probs'])
+            batch_pred_outputs.append(pred_outputs['pred_outputs'].squeeze())
+            batch_pred_probs.append(pred_outputs['pred_probs'].squeeze())
         
         outs.update(
             pred_outputs = batch_pred_outputs,
             pred_probs = batch_pred_probs
         )
-        return outs, loss
+        return outs, batch_loss
 
 

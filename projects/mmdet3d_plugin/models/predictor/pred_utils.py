@@ -880,13 +880,13 @@ def get_labels_from_reference_points(reference_points, future_traj, future_traj_
     labels_is_valid = []
 
     reference_points = reference_points.reshape(-1,3)
-    gt_traj_start_points = past_traj[:, -1]
+    gt_traj_start_points = past_traj[:, -1].cpu().numpy()
     for j in range(reference_points.size(0)):
         _, argmin = get_argmin_points(gt_traj_start_points, reference_points[j].cpu().numpy())
 
         if argmin is not None:
-            labels.append(future_traj[argmin].numpy())
-            labels_is_valid.append(future_traj_is_valid[argmin].numpy())
+            labels.append(future_traj[argmin].cpu().numpy())
+            labels_is_valid.append(future_traj_is_valid[argmin].cpu().numpy())
         else:
             labels.append(np.zeros((future_frame_num, 2)))
             labels_is_valid.append(np.zeros((future_frame_num)))

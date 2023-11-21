@@ -49,7 +49,8 @@ class NMSFreeCoderPredict(BaseBBoxCoder):
             list[dict]: Decoded boxes.
         """
         max_num = self.max_num
-        assert pred_trajs.shape[0] == max_num, "Only surpport predict query num[%d] == nms_free_decoder max_num[%d] now!!!"%(pred_trajs.shape[0], max_num)
+        if pred_trajs is not None:
+            assert pred_trajs.shape[0] == max_num, "Only surpport predict query num[%d] == nms_free_decoder max_num[%d] now!!!"%(pred_trajs.shape[0], max_num)
 
         # # original decode way, may get unstable nums and different from post_memory's process.
         # cls_scores = cls_scores.sigmoid()
@@ -85,15 +86,24 @@ class NMSFreeCoderPredict(BaseBBoxCoder):
             boxes3d = final_box_preds[mask]
             scores = final_scores[mask]
             labels = final_preds[mask]
-            trajs_predict = pred_trajs[mask]
-            probs_predict = pred_probs[mask]
-            predictions_dict = {
-                'bboxes': boxes3d,
-                'scores': scores,
-                'labels': labels,
-                'trajs_predict' : trajs_predict,
-                'probs_predict' : probs_predict
-            }
+            if pred_trajs is not None:
+                trajs_predict = pred_trajs[mask]
+                probs_predict = pred_probs[mask]
+                predictions_dict = {
+                    'bboxes': boxes3d,
+                    'scores': scores,
+                    'labels': labels,
+                    'trajs_predict' : trajs_predict,
+                    'probs_predict' : probs_predict
+                }
+            else:
+                predictions_dict = {
+                    'bboxes': boxes3d,
+                    'scores': scores,
+                    'labels': labels,
+                    'trajs_predict' : None,
+                    'probs_predict' : None
+                }
 
         else:
             raise NotImplementedError(

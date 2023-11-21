@@ -144,8 +144,7 @@ class StreamPredNuScenesDataset(NuScenesDataset):
         self.pre_pipeline(input_dict)
 
         # for pred......
-        pred_data = self.prepare_pred(index)
-        input_dict.update(pred_data)
+        self.prepare_pred(index, input_dict)
         
         example = self.pipeline(input_dict)
         return example
@@ -400,19 +399,24 @@ class StreamPredNuScenesDataset(NuScenesDataset):
         cur_e2g_r = cur_info['ego2global_rotation']
         cur_e2g_t = cur_info['ego2global_translation']
 
-        point = np.array([0.0, 0.0, 0.0])
-        point = self.get_transform_and_rotate(point, cur_e2g_t, cur_e2g_r)
+        # zh, convert to lidar coords...
+        point = np.array([0.0, 0.0, 0.0])                                   # in lidar
+        point = self.get_transform_and_rotate(point, cur_l2e_t, cur_l2e_r)  # in ego
+        point = self.get_transform_and_rotate(point, cur_e2g_t, cur_e2g_r)  # in global
         agent_x, agent_y = point[0], point[1]   # ego-av coord in global
 
         sample_token = cur_info['token']
         map_name = self.helper.get_map_name_from_sample_token(sample_token)
 
-        #### Attention !!! Add by zh: 替换成自车yaw角，且使用(30,0)为基准点
-        yaw = Quaternion(cur_e2g_r).yaw_pitch_roll[0]
+        #### Attention !!! Need check!
+        yaw_e2g = Quaternion(cur_e2g_r).yaw_pitch_roll[0]
+        yaw_l2e = Quaternion(cur_l2e_r).yaw_pitch_roll[0]
+        yaw = yaw_l2e + yaw_e2g
         normalizer = utils.Normalizer(agent_x, agent_y, -yaw)
 
         max_dis = 70.0
-        visible_x = 30.0
+        # visible_x = 30.0
+        visible_x = 0.0
         discretization_resolution_meters = 1
         nuscene_lanes = get_lanes_in_radius(agent_x, agent_y, max_dis, discretization_resolution_meters, self.maps[map_name])
 
