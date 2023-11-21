@@ -665,27 +665,73 @@ def tensors_tracking_to_detection(tensors, cur_frame):
 
 
 def get_attention_cfg():
-    point_cloud_range = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
+    # point_cloud_range = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
 
-    return dict(
-        type='DetrTransformerDecoderLayer',
-        attn_cfgs=[
-            dict(
-                type='MultiheadAttention',
-                embed_dims=256,
-                num_heads=8,
-                dropout=0.1),
-            dict(
-                type='Detr3DCrossAtten',
-                pc_range=point_cloud_range,
-                num_points=1,
-                embed_dims=256,
-            )
-        ],
-        feedforward_channels=512,
-        ffn_dropout=0.1,
-        operation_order=('self_attn', 'norm', 'cross_attn', 'norm',
-                         'ffn', 'norm'))
+    # return dict(
+    #     type='DetrTransformerDecoderLayer',
+    #     attn_cfgs=[
+    #         dict(
+    #             type='MultiheadAttention',
+    #             embed_dims=256,
+    #             num_heads=8,
+    #             dropout=0.1),
+    #         dict(
+    #             type='Detr3DCrossAtten',
+    #             pc_range=point_cloud_range,
+    #             num_points=1,
+    #             embed_dims=256,
+    #         )
+    #     ],
+    #     feedforward_channels=512,
+    #     ffn_dropout=0.1,
+    #     operation_order=('self_attn', 'norm', 'cross_attn', 'norm', 'ffn', 'norm'))
+
+    return dict(type='PETRTemporalDecoderLayer',
+                attn_cfgs=[
+                    dict(
+                        type='MultiheadAttention',
+                        embed_dims=256,
+                        num_heads=8,
+                        dropout=0.1),
+                    dict(
+                        type='PETRMultiheadFlashAttention',
+                        embed_dims=256,
+                        num_heads=8,
+                        dropout=0.1),
+                    ],
+                feedforward_channels=2048,
+                ffn_dropout=0.1,
+                with_cp=True,  ###use checkpoint to save memory
+                operation_order=('self_attn', 'norm', 'cross_attn', 'norm',
+                                    'ffn', 'norm'))
+
+# def get_transformer_cfg():
+#     return dict(
+#             type='PETRTemporalTransformer',
+#             decoder=dict(
+#                 type='PETRTransformerDecoder',
+#                 return_intermediate=True,
+#                 num_layers=6,
+#                 transformerlayers=dict(
+#                     type='PETRTemporalDecoderLayer',
+#                     attn_cfgs=[
+#                         dict(
+#                             type='MultiheadAttention',
+#                             embed_dims=256,
+#                             num_heads=8,
+#                             dropout=0.1),
+#                         dict(
+#                             type='PETRMultiheadFlashAttention',
+#                             embed_dims=256,
+#                             num_heads=8,
+#                             dropout=0.1),
+#                         ],
+#                     feedforward_channels=2048,
+#                     ffn_dropout=0.1,
+#                     with_cp=True,  ###use checkpoint to save memory
+#                     operation_order=('self_attn', 'norm', 'cross_attn', 'norm',
+#                                      'ffn', 'norm')),
+#             ))
 
 
 def reference_points_relative_to_lidar(reference_points: np.ndarray, pc_range):
@@ -813,3 +859,36 @@ def get_coordinates_from_track_instance_boxes(boxes):
     if len(boxes.shape) == 1:
         return np.concatenate([boxes[0:2], boxes[4:5]])
     return np.concatenate([boxes[:, 0:2], boxes[:, 4:5]], axis=-1)
+
+
+def get_argmin_points(xy_points, reference_point, dis_thresh=2.0):
+    n = len(xy_points)
+    if n == 0:
+        return None, None
+
+    reference_point = reference_point[:2]
+    delta = xy_points - reference_point[np.newaxis, :]  # [n, len, 2]
+    delta = np.sqrt((delta * delta).sum(-1))  # [n, len]
+    argmin = np.argmin(delta)
+    if delta[argmin] > dis_thresh:
+        return None, None
+    return delta[argmin], argmin
+
+
+def get_labels_from_reference_points(reference_points, future_traj, future_traj_is_valid, past_traj, past_traj_is_valid, future_frame_num=12):
+    labels = []
+    labels_is_valid = []
+
+    reference_points = reference_points.reshape(-1,3)
+    gt_traj_start_points = past_traj[:, -1]
+    for j in range(reference_points.size(0)):
+        _, argmin = get_argmin_points(gt_traj_start_points, reference_points[j].cpu().numpy())
+
+        if argmin is not None:
+            labels.append(future_traj[argmin].numpy())
+            labels_is_valid.append(future_traj_is_valid[argmin].numpy())
+        else:
+            labels.append(np.zeros((future_frame_num, 2)))
+            labels_is_valid.append(np.zeros((future_frame_num)))
+
+    return np.array(labels), np.array(labels_is_valid)

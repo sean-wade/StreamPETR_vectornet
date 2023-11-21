@@ -105,6 +105,7 @@ class StreamPETRHead(AnchorFreeHead):
                  split = 0.5,
                  init_cfg=None,
                  normedlinear=False,
+                 do_pred = False,    # for pred
                  **kwargs):
         # NOTE here use `AnchorFreeHead` instead of `TransformerHead`,
         # since it brings inconvenience when the initialization of
@@ -183,6 +184,7 @@ class StreamPETRHead(AnchorFreeHead):
         self.bbox_noise_trans = noise_trans
         self.dn_weight = dn_weight
         self.split = split 
+        self.do_pred = do_pred
 
         self.act_cfg = transformer.get('act_cfg',
                                        dict(type='ReLU', inplace=True))
@@ -372,6 +374,13 @@ class StreamPETRHead(AnchorFreeHead):
         self.memory_reference_point = transform_reference_points(self.memory_reference_point, data['ego_pose'], reverse=False)
         self.memory_timestamp -= data['timestamp'].unsqueeze(-1).unsqueeze(-1)
         self.memory_egopose = data['ego_pose'].unsqueeze(1) @ self.memory_egopose
+
+        if self.do_pred:
+            query_for_pred = {
+                "topk_reference_points" : rec_reference_points,
+                "topk_query" : rec_memory
+            }
+            return query_for_pred
 
     def position_embeding(self, data, memory_centers, topk_indexes, img_metas):
         eps = 1e-5
@@ -603,7 +612,7 @@ class StreamPETRHead(AnchorFreeHead):
         tgt, query_pos, reference_points, temp_memory, temp_pos, rec_ego_pose = self.temporal_alignment(query_pos, tgt, reference_points)
 
         # transformer here is a little different from PETR
-        outs_dec, _ = self.transformer(memory, tgt, query_pos, pos_embed, attn_mask, temp_memory, temp_pos)
+        outs_dec, memory = self.transformer(memory, tgt, query_pos, pos_embed, attn_mask, temp_memory, temp_pos)
 
         outs_dec = torch.nan_to_num(outs_dec)
         outputs_classes = []
@@ -626,7 +635,7 @@ class StreamPETRHead(AnchorFreeHead):
         all_bbox_preds[..., 0:3] = (all_bbox_preds[..., 0:3] * (self.pc_range[3:6] - self.pc_range[0:3]) + self.pc_range[0:3])
         
         # update the memory bank
-        self.post_update_memory(data, rec_ego_pose, all_cls_scores, all_bbox_preds, outs_dec, mask_dict)
+        query_for_preds = self.post_update_memory(data, rec_ego_pose, all_cls_scores, all_bbox_preds, outs_dec, mask_dict)
 
         if mask_dict and mask_dict['pad_size'] > 0:
             output_known_class = all_cls_scores[:, :, :mask_dict['pad_size'], :]
@@ -647,6 +656,12 @@ class StreamPETRHead(AnchorFreeHead):
                 'dn_mask_dict':None,
             }
 
+        if self.do_pred:
+            pred_feats = {
+                "memory" : memory,
+                **query_for_preds
+            }
+            return outs, pred_feats
         return outs
     
     def prepare_for_loss(self, mask_dict):
@@ -1016,6 +1031,30 @@ class StreamPETRHead(AnchorFreeHead):
 
     @force_fp32(apply_to=('preds_dicts'))
     def get_bboxes(self, preds_dicts, img_metas, rescale=False):
+        """Generate bboxes from bbox head predictions.
+        Args:
+            preds_dicts (tuple[list[dict]]): Prediction results.
+            img_metas (list[dict]): Point cloud and image's meta info.
+        Returns:
+            list[dict]: Decoded bbox, scores and labels after nms.
+        """
+        preds_dicts = self.bbox_coder.decode(preds_dicts)
+        num_samples = len(preds_dicts)
+
+        ret_list = []
+        for i in range(num_samples):
+            preds = preds_dicts[i]
+            bboxes = preds['bboxes']
+            bboxes[:, 2] = bboxes[:, 2] - bboxes[:, 5] * 0.5
+            bboxes = img_metas[i]['box_type_3d'](bboxes, bboxes.size(-1))
+            scores = preds['scores']
+            labels = preds['labels']
+            ret_list.append([bboxes, scores, labels])
+        return ret_list
+    
+
+    @force_fp32(apply_to=('preds_dicts'))
+    def get_bboxes_pred(self, preds_dicts, img_metas, rescale=False):
         """Generate bboxes from bbox head predictions.
         Args:
             preds_dicts (tuple[list[dict]]): Prediction results.

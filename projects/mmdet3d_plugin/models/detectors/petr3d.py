@@ -17,6 +17,9 @@ from mmdet3d.core import bbox3d2result
 from mmdet3d.models.detectors.mvx_two_stage import MVXTwoStageDetector
 from projects.mmdet3d_plugin.models.utils.grid_mask import GridMask
 from projects.mmdet3d_plugin.models.utils.misc import locations
+from ..predictor import pred_utils
+from projects.mmdet3d_plugin.models.utils.positional_encoding import pos2posemb3d
+
 
 @DETECTORS.register_module()
 class Petr3D(MVXTwoStageDetector):
@@ -53,6 +56,7 @@ class Petr3D(MVXTwoStageDetector):
                  agents_layer_0_num=2,
                  add_branch=False,
                  predictor=None,
+                 collect_keys_pred=['pred_mapping', 'pred_polyline_spans', 'pred_matrix', 'future_traj', 'future_traj_is_valid', 'past_traj', 'past_traj_is_valid'],
                  ):
         super(Petr3D, self).__init__(pts_voxel_layer, pts_voxel_encoder,
                              pts_middle_encoder, pts_fusion_layer,
@@ -71,6 +75,7 @@ class Petr3D(MVXTwoStageDetector):
         self.aux_2d_only = aux_2d_only
 
         self.do_pred = do_pred
+        self.collect_keys_pred = collect_keys_pred
         self.pred_embed_dims = pred_embed_dims
         self.relative_pred = relative_pred
         self.agents_layer_0 = agents_layer_0
@@ -82,7 +87,13 @@ class Petr3D(MVXTwoStageDetector):
 
             if self.agents_layer_0:
                 from ..predictor import predictor_lib
-                self.agents_layer_mlp_0 = nn.Sequential(*[predictor_lib.MLP(256, 256) for _ in range(agents_layer_0_num)])
+                self.agents_layer_mlp_0 = nn.Sequential(*[predictor_lib.MLP(pred_embed_dims, pred_embed_dims) for _ in range(agents_layer_0_num)])
+            
+            if self.add_branch:
+                from mmcv.utils import build_from_cfg
+                from mmcv.cnn.bricks.registry import (TRANSFORMER_LAYER)
+                self.add_branch_mlp = predictor_lib.MLP(pred_embed_dims, pred_embed_dims)
+                self.add_branch_attention = build_from_cfg(pred_utils.get_attention_cfg(), TRANSFORMER_LAYER)
 
 
     def extract_img_feat(self, img, len_queue=1, training_mode=False):
@@ -136,6 +147,7 @@ class Petr3D(MVXTwoStageDetector):
                             gt_bboxes_ignore=None,
                             **data):
         losses = dict()
+        B = data['img'].size(0)
         T = data['img'].size(1)
         num_nograd_frames = T - self.num_frame_head_grads
         num_grad_losses = T - self.num_frame_losses
@@ -144,8 +156,10 @@ class Petr3D(MVXTwoStageDetector):
             return_losses = False
             data_t = dict()
             for key in data:
-                if key not in ['pred_mapping', 'pred_matrix', 'pred_polyline_spans', 'instance_idx_2_labels']:    # for pred.
-                    data_t[key] = data[key][:, i] 
+                if key not in self.collect_keys_pred:    # for pred.
+                    data_t[key] = data[key][:, i]
+                else:
+                    data_t[key] = [data[key][b][i] for b in range(B)]
 
             data_t['img_feats'] = data_t['img_feats']
             if i >= num_nograd_frames:
@@ -206,13 +220,17 @@ class Petr3D(MVXTwoStageDetector):
         if not requires_grad:
             self.eval()
             with torch.no_grad():
-                outs = self.pts_bbox_head(location, img_metas, None, **data)
+                outs, _ = self.pts_bbox_head(location, img_metas, None, **data)
             self.train()
 
         else:
             outs_roi = self.forward_roi_head(location, **data)
             topk_indexes = outs_roi['topk_indexes']
-            outs = self.pts_bbox_head(location, img_metas, topk_indexes, **data)
+            if self.do_pred:
+                outs, pred_feats = self.pts_bbox_head(location, img_metas, topk_indexes, **data)
+                outs, pred_loss = self.do_predict(outs, pred_feats, **data)
+            else:
+                outs = self.pts_bbox_head(location, img_metas, topk_indexes, **data)
 
         if return_losses:
             loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs]
@@ -221,6 +239,9 @@ class Petr3D(MVXTwoStageDetector):
                 loss2d_inputs = [gt_bboxes, gt_labels, centers2d, depths, outs_roi, img_metas]
                 losses2d = self.img_roi_head.loss(*loss2d_inputs)
                 losses.update(losses2d) 
+
+            if self.do_pred:
+                losses['pred_loss'] = pred_loss if pred_loss is not None else torch.zeros(1)
 
             return losses
         else:
@@ -310,7 +331,7 @@ class Petr3D(MVXTwoStageDetector):
                     name, type(var)))
         for key in data:
             # if key != 'img':
-            if key not in ['img', 'pred_mapping', 'pred_matrix', 'pred_polyline_spans', 'instance_idx_2_labels']:    # for pred.
+            if key not in self.collect_keys_pred:    # for pred.
                 data[key] = data[key][0][0].unsqueeze(0)
             else:
                 data[key] = data[key][0]
@@ -330,9 +351,14 @@ class Petr3D(MVXTwoStageDetector):
         else:
             data['prev_exists'] = data['img'].new_ones(1)
 
-        outs = self.pts_bbox_head(location, img_metas, topk_indexes, **data)
-        bbox_list = self.pts_bbox_head.get_bboxes(
-            outs, img_metas)
+        if self.do_pred:
+            outs, pred_feats = self.pts_bbox_head(location, img_metas, topk_indexes, **data)
+            outs, _ = self.do_predict(outs, pred_feats, **data)
+        else:
+            outs = self.pts_bbox_head(location, img_metas, topk_indexes, **data)
+
+        # outs, _ = self.pts_bbox_head(location, img_metas, topk_indexes, **data)
+        bbox_list = self.pts_bbox_head.get_bboxes(outs, img_metas)
         bbox_results = [
             bbox3d2result(bboxes, scores, labels)
             for bboxes, scores, labels in bbox_list
@@ -351,4 +377,52 @@ class Petr3D(MVXTwoStageDetector):
             result_dict['pts_bbox'] = pts_bbox
         return bbox_list
 
-    
+
+    def do_predict(self, outs, pred_feats, **data):
+        topk_query = pred_feats['topk_query'].transpose(0, 1).contiguous()
+        output_reference_point = pred_feats['topk_reference_points']
+        output_reference_point_embd = self.pts_bbox_head.query_embedding(pos2posemb3d(output_reference_point)).transpose(0, 1).contiguous()
+        memory = pred_feats['memory'].transpose(0, 1).contiguous()
+        if self.add_branch:
+            query = self.add_branch_mlp(topk_query)
+            query = self.add_branch_attention(
+                query=query,
+                query_pos=output_reference_point_embd,
+                key=memory,
+                value=memory
+            )
+            topk_query = query + topk_query
+
+        B = len(data["pred_mapping"])
+        batch_pred_outputs, batch_pred_probs = [], []
+        batch_loss = 0.0
+        for bb in range(B):
+            mapping = data["pred_mapping"][bb]
+            if not mapping['valid_pred']:
+                continue
+            
+            future_traj             = data['future_traj'][bb]
+            future_traj_is_valid    = data['future_traj_is_valid'][bb]
+            past_traj               = data['past_traj'][bb]
+            past_traj_is_valid      = data['past_traj_is_valid'][bb]
+            labels, labels_is_valid = pred_utils.get_labels_from_reference_points(output_reference_point[bb], future_traj, future_traj_is_valid, past_traj, past_traj_is_valid)
+            
+            loss, pred_outputs, _ = self.predictor(agents=topk_query[:, bb].unsqueeze(0),
+                                            device=query.device,
+                                            labels=[labels],
+                                            labels_is_valid=[labels_is_valid],
+                                            pred_matrix=[data['pred_matrix'][bb]],
+                                            pred_polyline_spans=[data['pred_polyline_spans'][bb]],
+                                            pred_mapping=[mapping]
+                                            )
+            batch_loss += loss
+            batch_pred_outputs.append(pred_outputs['pred_outputs'])
+            batch_pred_probs.append(pred_outputs['pred_probs'])
+        
+        outs.update(
+            pred_outputs = batch_pred_outputs,
+            pred_probs = batch_pred_probs
+        )
+        return outs, loss
+
+

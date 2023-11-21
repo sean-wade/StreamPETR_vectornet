@@ -178,8 +178,8 @@ class VectorNet(nn.Module):
     # @profile
     def forward(self,
                 pred_matrix=None,
-                polyline_spans=None,
-                mapping=None,
+                pred_polyline_spans=None,
+                pred_mapping=None,
                 labels=None,
                 labels_is_valid=None,
                 agents: List[Tensor] = None,
@@ -192,8 +192,8 @@ class VectorNet(nn.Module):
         starttime = time.time()
 
         lane_matrix = pred_matrix
-        polyline_spans = polyline_spans
-        mapping = mapping
+        polyline_spans = pred_polyline_spans
+        mapping = pred_mapping
         if 'work_dir' in mapping and np.random.randint(20) == 0:
             print(f'work_dir {mapping["work_dir"]}')
         if np.random.randint(0, 50) == 0:

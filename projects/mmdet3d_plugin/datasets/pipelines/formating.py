@@ -52,7 +52,7 @@ class PETRFormatBundle3D(DefaultFormatBundle):
         for key in self.collect_keys:
             if key in ['timestamp',  'img_timestamp']:
                  results[key] = DC(to_tensor(np.array(results[key], dtype=np.float64)))
-            elif key in ['pred_mapping', 'pred_polyline_spans', 'instance_idx_2_labels']:
+            elif key in ['pred_mapping', 'pred_polyline_spans']:
                 results[key] = DC(results[key], cpu_only=True)
             else:
                  results[key] = DC(to_tensor(np.array(results[key], dtype=np.float32)))

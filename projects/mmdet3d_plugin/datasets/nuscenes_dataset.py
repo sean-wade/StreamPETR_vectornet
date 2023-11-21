@@ -127,7 +127,7 @@ class CustomNuScenesDataset(NuScenesDataset):
                     input_dict.update(dict(prev_exists=True))
 
             self.pre_pipeline(input_dict)
-            
+
             # for pred......
             pred_data = self.prepare_pred(i)
             input_dict.update(pred_data)
@@ -417,8 +417,8 @@ class CustomNuScenesDataset(NuScenesDataset):
 
     def get_pred_lanes(self, results, index, mapping):
         cur_info = self.data_infos[index]
-        # cur_l2e_r = cur_info['lidar2ego_rotation']
-        # cur_l2e_t = cur_info['lidar2ego_translation']
+        cur_l2e_r = cur_info['lidar2ego_rotation']
+        cur_l2e_t = cur_info['lidar2ego_translation']
         cur_e2g_r = cur_info['ego2global_rotation']
         cur_e2g_t = cur_info['ego2global_translation']
 
@@ -596,9 +596,10 @@ class CustomNuScenesDataset(NuScenesDataset):
                         continue
 
                     box = utils.get_box_from_array(gt_bboxes_3d[box_idx])
-                    box = utils.get_transform_and_rotate_box(box, l2e_t, l2e_r)
-                    box = utils.get_transform_and_rotate_box(box, e2g_t, e2g_r)
-                    box = utils.get_transform_and_rotate_box(box, cur_e2g_t, cur_e2g_r, reverse=True)
+                    box = utils.get_transform_and_rotate_box(box, l2e_t, l2e_r)     # t_lidar -> t_ego
+                    box = utils.get_transform_and_rotate_box(box, e2g_t, e2g_r)     # t_ego -> global
+                    box = utils.get_transform_and_rotate_box(box, cur_e2g_t, cur_e2g_r, reverse=True)   #  global -> ego_t0
+                    box = utils.get_transform_and_rotate_box(box, cur_l2e_t, cur_l2e_r, reverse=True)   #  ego_t0 -> lidar_t0
                     point = box.center
                     # yaw = -(gt_bboxes_3d[box_idx][6] + np.pi / 2)
                     

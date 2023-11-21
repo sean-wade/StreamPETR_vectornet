@@ -28,7 +28,9 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description='MMDet test (and eval) a model')
     parser.add_argument('--config', help='test config file path', default="projects/configs/pred/stream_petr_vov_flash_800_bs2_seq_24e.py")
-    parser.add_argument('--checkpoint', help='checkpoint file', default="../StreamPETR/pretrained/stream_petr_vov_flash_800_bs2_seq_24e.pth")
+    # parser.add_argument('--config', help='test config file path', default="projects/configs/pred/stream_petr_vov_flash_800_bs2_seq_24e.py")
+    parser.add_argument('--checkpoint', help='checkpoint file', default="work_dirs/stream_petr_vov_flash_800_bs2_seq_24e/latest.pth")
+    # parser.add_argument('--checkpoint', help='checkpoint file', default="../StreamPETR/pretrained/stream_petr_vov_flash_800_bs2_seq_24e.pth")
     parser.add_argument('--out', help='output result file in pickle format')
     parser.add_argument(
         '--fuse-conv-bn',
@@ -38,7 +40,7 @@ def parse_args():
     parser.add_argument(
         '--format-only',
         action='store_true',
-        default=True,
+        # default=True,
         help='Format the output results without perform evaluation. It is'
         'useful when you want to format the result to a specific format and '
         'submit it to the test server')
@@ -46,7 +48,7 @@ def parse_args():
         '--eval',
         type=str,
         nargs='+',
-        # default=['bbox'],
+        default=['bbox'],
         help='evaluation metrics, which depends on the dataset, e.g., "bbox",'
         ' "segm", "proposal" for COCO, and "mAP", "recall" for PASCAL VOC')
     parser.add_argument('--show', action='store_true', help='show results')
@@ -241,7 +243,7 @@ def main():
             assert False
             #mmcv.dump(outputs['bbox_results'], args.out)
         kwargs = {} if args.eval_options is None else args.eval_options
-        kwargs['jsonfile_prefix'] = osp.join('test', args.config.split(
+        kwargs['jsonfile_prefix'] = osp.join('work_dirs/test', args.config.split(
             '/')[-1].split('.')[-2], time.ctime().replace(' ', '_').replace(':', '_'))
         if args.format_only:
             dataset.format_results(outputs, **kwargs)

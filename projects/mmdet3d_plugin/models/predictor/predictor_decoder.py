@@ -200,8 +200,10 @@ class Decoder(nn.Module):
                     print(self.rebalance_prob_values)
 
         results = dict(
-            pred_outputs=utils.to_numpy(outputs),
-            pred_probs=utils.to_numpy(pred_probs),
+            # pred_outputs=utils.to_numpy(outputs),
+            # pred_probs=utils.to_numpy(pred_probs),
+            pred_outputs=outputs,
+            pred_probs=pred_probs,
         )
         return loss.mean(), results, None
 

@@ -18,16 +18,17 @@ class_names = [
     'motorcycle', 'bicycle', 'pedestrian', 'traffic_cone'
 ]
 
+do_prediction = True
 num_gpus = 1
-batch_size = 1
-num_workers = 1
+batch_size = 2
+num_workers = 0
 # num_iters_per_epoch = 28130 // (num_gpus * batch_size)
 num_iters_per_epoch = 323 // (num_gpus * batch_size)
 num_epochs = 100
 
 queue_length = 1
 num_frame_losses = 1
-collect_keys_pred = ['pred_mapping', 'pred_matrix', 'pred_polyline_spans', 'instance_idx_2_labels']
+collect_keys_pred = ['pred_mapping', 'pred_polyline_spans', 'pred_matrix', 'future_traj', 'future_traj_is_valid', 'past_traj', 'past_traj_is_valid']
 collect_keys=['lidar2img', 'intrinsics', 'extrinsics','timestamp', 'img_timestamp', 'ego_pose', 'ego_pose_inv'] + collect_keys_pred
 input_modality = dict(
     use_lidar=False,
@@ -88,6 +89,7 @@ model = dict(
         noise_scale = 1.0, 
         dn_weight= 1.0, ##dn loss weight
         split = 0.75, ###positive rate
+        do_pred=do_prediction,
         LID=True,
         with_position=True,
         position_range=[-61.2, -61.2, -10.0, 61.2, 61.2, 10.0],
@@ -119,10 +121,11 @@ model = dict(
                                      'ffn', 'norm')),
             )),
         bbox_coder=dict(
-            type='NMSFreeCoder',
+            # type='NMSFreeCoder',
+            type='NMSFreeCoderPredict',
             post_center_range=[-61.2, -61.2, -10.0, 61.2, 61.2, 10.0],
             pc_range=point_cloud_range,
-            max_num=300,
+            max_num=256,    # has to be 256 for now.
             voxel_size=voxel_size,
             num_classes=10), 
         loss_cls=dict(
@@ -135,7 +138,7 @@ model = dict(
         loss_iou=dict(type='GIoULoss', loss_weight=0.0),),
 
     # prediction from vip3d
-    do_pred=True,
+    do_pred=do_prediction,
     pred_embed_dims=256,
     relative_pred=True,
     agents_layer_0=True,
@@ -150,6 +153,7 @@ model = dict(
             hidden_size=128,
         ),
     ),
+    collect_keys_pred=collect_keys_pred,
 
     # model training and testing settings
     train_cfg=dict(pts=dict(
@@ -165,7 +169,8 @@ model = dict(
             pc_range=point_cloud_range),)))
 
 
-dataset_type = 'CustomNuScenesDataset'
+# dataset_type = 'CustomNuScenesDataset'
+dataset_type = 'StreamPredNuScenesDataset'
 data_root = './data/nuscenes/'
 
 file_client_args = dict(backend='disk')
@@ -178,7 +183,7 @@ ida_aug_conf = {
         "rot_lim": (0.0, 0.0),
         "H": 900,
         "W": 1600,
-        "rand_flip": True,
+        "rand_flip": False,
     }
 train_pipeline = [
     dict(type='LoadMultiViewImageFromFiles', to_float32=True),
@@ -186,15 +191,16 @@ train_pipeline = [
         with_label=True, with_bbox_depth=True),
     dict(type='InstanceRangeFilter', point_cloud_range=point_cloud_range),
     # dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
-    dict(type='ObjectNameFilter', classes=class_names),
+    dict(type='InstanceNameFilter', classes=class_names),
+    # dict(type='ObjectNameFilter', classes=class_names),
     dict(type='ResizeCropFlipRotImage', data_aug_conf = ida_aug_conf, training=True),
-    dict(type='GlobalRotScaleTransImage',
-            rot_range=[-0.3925, 0.3925],
-            translation_std=[0, 0, 0],
-            scale_ratio_range=[0.95, 1.05],
-            reverse_angle=True,
-            training=True,
-            ),
+    # dict(type='GlobalRotScaleTransImage',
+    #         rot_range=[-0.3925, 0.3925],
+    #         translation_std=[0, 0, 0],
+    #         scale_ratio_range=[0.95, 1.05],
+    #         reverse_angle=True,
+    #         training=True,
+    #         ),
     dict(type='NormalizeMultiviewImage', **img_norm_cfg),
     dict(type='PadMultiViewImage', size_divisor=32),
     dict(type='PETRFormatBundle3D', class_names=class_names, collect_keys=collect_keys + ['prev_exists']),
@@ -272,6 +278,6 @@ find_unused_parameters=False #### when use checkpoint, find_unused_parameters mu
 checkpoint_config = dict(interval=num_iters_per_epoch, max_keep_ckpts=3)
 runner = dict(
     type='IterBasedRunner', max_iters=num_epochs * num_iters_per_epoch)
-# load_from='ckpts/fcos3d_vovnet_imgbackbone-remapped.pth'
-load_from=None
+load_from='../StreamPETR/pretrained/stream_petr_vov_flash_800_bs2_seq_24e.pth'
+# load_from=None
 resume_from=None

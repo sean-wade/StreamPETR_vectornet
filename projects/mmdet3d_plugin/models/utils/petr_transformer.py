@@ -506,7 +506,7 @@ class PETRTemporalTransformer(BaseModule):
             )
         out_dec = out_dec.transpose(1, 2).contiguous()
         memory = memory.reshape(-1, bs, c).transpose(0, 1).contiguous()
-        return  out_dec, memory
+        return out_dec, memory
 
 
 @TRANSFORMER_LAYER.register_module()

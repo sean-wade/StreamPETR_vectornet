@@ -425,10 +425,59 @@ class InstanceRangeFilter(object):
         input_dict['gt_labels_3d'] = gt_labels_3d
         input_dict['ann_info']['instance_inds'] = instance_inds
 
+        # for prediction by zh
+        input_dict['future_traj'] = input_dict['future_traj'][mask.numpy().astype(np.bool)]
+        input_dict['future_traj_is_valid'] = input_dict['future_traj_is_valid'][mask.numpy().astype(np.bool)]
+        input_dict['past_traj'] = input_dict['past_traj'][mask.numpy().astype(np.bool)]
+        input_dict['past_traj_is_valid'] = input_dict['past_traj_is_valid'][mask.numpy().astype(np.bool)]
+
         return input_dict
 
     def __repr__(self):
         """str: Return a string that describes the module."""
         repr_str = self.__class__.__name__
         repr_str += f'(point_cloud_range={self.pcd_range.tolist()})'
+        return repr_str
+
+
+@PIPELINES.register_module()
+class InstanceNameFilter(object):
+    """Filter GT objects by their names.
+
+    Args:
+        classes (list[str]): List of class names to be kept for training.
+    """
+
+    def __init__(self, classes):
+        self.classes = classes
+        self.labels = list(range(len(self.classes)))
+
+    def __call__(self, input_dict):
+        """Call function to filter objects by their names.
+
+        Args:
+            input_dict (dict): Result dict from loading pipeline.
+
+        Returns:
+            dict: Results after filtering, 'gt_bboxes_3d', 'gt_labels_3d'
+                keys are updated in the result dict.
+        """
+        gt_labels_3d = input_dict['gt_labels_3d']
+        gt_bboxes_mask = np.array([n in self.labels for n in gt_labels_3d],
+                                  dtype=np.bool_)
+        input_dict['gt_bboxes_3d'] = input_dict['gt_bboxes_3d'][gt_bboxes_mask]
+        input_dict['gt_labels_3d'] = input_dict['gt_labels_3d'][gt_bboxes_mask]
+
+        # for prediction by zh
+        input_dict['future_traj'] = input_dict['future_traj'][gt_bboxes_mask]
+        input_dict['future_traj_is_valid'] = input_dict['future_traj_is_valid'][gt_bboxes_mask]
+        input_dict['past_traj'] = input_dict['past_traj'][gt_bboxes_mask]
+        input_dict['past_traj_is_valid'] = input_dict['past_traj_is_valid'][gt_bboxes_mask]
+
+        return input_dict
+
+    def __repr__(self):
+        """str: Return a string that describes the module."""
+        repr_str = self.__class__.__name__
+        repr_str += f'(classes={self.classes})'
         return repr_str
