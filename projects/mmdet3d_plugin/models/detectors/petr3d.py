@@ -233,6 +233,8 @@ class Petr3D(MVXTwoStageDetector):
                 outs = self.pts_bbox_head(location, img_metas, topk_indexes, **data)
 
         if return_losses:
+            '''
+            ## pred loss 和 其他 loss 一起参与计算
             loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs]
             losses = self.pts_bbox_head.loss(*loss_inputs)
             if self.with_img_roi_head:
@@ -242,8 +244,23 @@ class Petr3D(MVXTwoStageDetector):
 
             if self.do_pred:
                 losses['pred_loss'] = pred_loss if pred_loss is not None else torch.zeros(1)
-
             return losses
+            '''
+
+            if self.do_pred:
+                # only 计算 pred loss
+                losses = {}
+                losses['pred_loss'] = pred_loss if pred_loss is not None else torch.zeros(1)
+                return losses
+            else:
+                loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs]
+                losses = self.pts_bbox_head.loss(*loss_inputs)
+                if self.with_img_roi_head:
+                    loss2d_inputs = [gt_bboxes, gt_labels, centers2d, depths, outs_roi, img_metas]
+                    losses2d = self.img_roi_head.loss(*loss2d_inputs)
+                    losses.update(losses2d) 
+
+                return losses
         else:
             return None
 

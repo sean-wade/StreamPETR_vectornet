@@ -392,7 +392,6 @@ class StreamPredNuScenesDataset(NuScenesDataset):
     
 
     def get_pred_lanes(self, index, data_dict):
-        # TODO: convert to lidar coordinate
         cur_info = self.data_infos[index]
         cur_l2e_r = cur_info['lidar2ego_rotation']
         cur_l2e_t = cur_info['lidar2ego_translation']
@@ -408,7 +407,7 @@ class StreamPredNuScenesDataset(NuScenesDataset):
         sample_token = cur_info['token']
         map_name = self.helper.get_map_name_from_sample_token(sample_token)
 
-        #### Attention !!! Need check!
+        #### No problem here(original ViP3D code, +90 degrees by hand!!!)
         yaw_e2g = Quaternion(cur_e2g_r).yaw_pitch_roll[0]
         yaw_l2e = Quaternion(cur_l2e_r).yaw_pitch_roll[0]
         yaw = yaw_l2e + yaw_e2g
@@ -647,3 +646,4 @@ def get_lanes_in_radius(x: float, y: float, radius: float,
 
     return lanes
 ###############################################################################
+

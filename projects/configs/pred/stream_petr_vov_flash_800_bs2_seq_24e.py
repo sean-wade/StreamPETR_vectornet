@@ -20,11 +20,12 @@ class_names = [
 
 do_prediction = True
 num_gpus = 1
-batch_size = 4
+batch_size = 16
 num_workers = 4
 # num_iters_per_epoch = 28130 // (num_gpus * batch_size)
 num_iters_per_epoch = 323 // (num_gpus * batch_size)
-num_epochs = 100
+num_epochs = 200
+base_lr = 5e-3
 
 queue_length = 1
 num_frame_losses = 1
@@ -247,7 +248,8 @@ data = dict(
         use_valid_flag=True,
         filter_empty_gt=False,
         box_type_3d='LiDAR'),
-    val=dict(type=dataset_type, 
+    val=dict(type=dataset_type,
+             data_root=data_root, 
              test_mode=True, 
              pipeline=test_pipeline, 
              collect_keys=collect_keys + ['img', 'img_metas'], 
@@ -255,7 +257,8 @@ data = dict(
              ann_file=data_root + 'nuscenes2d_with_id_temporal_infos_val.pkl', 
              classes=class_names, 
              modality=input_modality),
-    test=dict(type=dataset_type, 
+    test=dict(type=dataset_type,
+              data_root=data_root, 
               test_mode=True, 
               pipeline=test_pipeline, 
               collect_keys=collect_keys + ['img', 'img_metas'], 
@@ -270,7 +273,7 @@ data = dict(
 
 optimizer = dict(
     type='AdamW', 
-    lr=4e-4, # bs 8: 2e-4 || bs 16: 4e-4
+    lr=base_lr, # bs 8: 2e-4 || bs 16: 4e-4
     paramwise_cfg=dict(
         custom_keys={
             'img_backbone': dict(lr_mult=0.1), # set to 0.1 always better when apply 2D pretrained.
