@@ -29,7 +29,7 @@ from mmcv.utils import TORCH_VERSION, digit_version
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
-    parser.add_argument('--config', help='test config file path', default="projects/configs/pred/stream_petr_vov_flash_800_bs2_seq_24e.py")
+    parser.add_argument('--config', help='test config file path', default="projects/configs/pred2/stream_petr_vov_flash_800_bs1_wk0_seq_24e_debug.py")
     # parser.add_argument('--config', help='test config file path', default="projects/configs/StreamPETR_ZH/stream_petr_vov_flash_800_bs2_8key_24e.py")
     parser.add_argument('--work-dir', help='the dir to save logs and models')
     parser.add_argument(
@@ -218,7 +218,7 @@ def main():
     # zh, don't know if load ckpt before or after this.
     # model.init_weights()
 
-    # Freeze all submodules except prediction
+    # # Freeze all submodules except prediction
     for name, param in model.named_parameters():
         if 'pts_bbox_head' in name or \
                 'img_backbone' in name or \

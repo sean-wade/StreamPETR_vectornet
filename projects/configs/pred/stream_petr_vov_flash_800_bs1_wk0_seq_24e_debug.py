@@ -20,12 +20,12 @@ class_names = [
 
 do_prediction = True
 num_gpus = 1
-batch_size = 16
-num_workers = 4
-# num_iters_per_epoch = 28130 // (num_gpus * batch_size)
+batch_size = 1
+num_workers = 0
+num_epochs = 60
+base_lr = 1e-2
 num_iters_per_epoch = 323 // (num_gpus * batch_size)
-num_epochs = 200
-base_lr = 5e-3
+# num_iters_per_epoch = 28130 // (num_gpus * batch_size)
 
 queue_length = 1
 num_frame_losses = 1

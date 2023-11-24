@@ -425,7 +425,7 @@ class Petr3D(MVXTwoStageDetector):
             past_traj               = data['past_traj'][bb]
             past_traj_is_valid      = data['past_traj_is_valid'][bb]
             labels, labels_is_valid = pred_utils.get_labels_from_reference_points(output_reference_point[bb], future_traj, future_traj_is_valid, past_traj, past_traj_is_valid)
-            
+
             loss, pred_outputs, _ = self.predictor(agents=topk_query[:, bb].unsqueeze(0),
                                             device=query.device,
                                             labels=[labels],

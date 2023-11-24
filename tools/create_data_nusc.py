@@ -32,12 +32,12 @@ parser = argparse.ArgumentParser(description='Data converter arg parser')
 parser.add_argument(
     '--root-path',
     type=str,
-    default='./data/nuscenes',
+    default='/mnt/data/userdata/se/dataset/nusc',
     help='specify the root path of dataset')
 parser.add_argument(
     '--version',
     type=str,
-    default='v1.0-mini',
+    default='v1.0',
     required=False,
     help='specify the dataset version, no need for kitti')
 parser.add_argument(
@@ -49,7 +49,7 @@ parser.add_argument(
 parser.add_argument(
     '--out-dir',
     type=str,
-    default='/data/nuscenes',
+    default='/mnt/data/userdata/se/dataset/nusc',
     required=False,
     help='name of info pkl')
 parser.add_argument('--extra-tag', type=str, default='nuscenes2d')

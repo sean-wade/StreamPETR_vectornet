@@ -743,7 +743,8 @@ def reference_points_relative_to_lidar(reference_points: np.ndarray, pc_range):
 
 
 def reference_points_lidar_to_relative(reference_points: np.ndarray, pc_range):
-    reference_points = reference_points.copy()
+    # reference_points = reference_points.copy()
+    # reference_points = reference_points.clone()
     reference_points[..., 0:1] = (reference_points[..., 0:1] - pc_range[0]) / (pc_range[3] - pc_range[0])
     reference_points[..., 1:2] = (reference_points[..., 1:2] - pc_range[1]) / (pc_range[4] - pc_range[1])
     reference_points[..., 2:3] = (reference_points[..., 2:3] - pc_range[2]) / (pc_range[5] - pc_range[2])

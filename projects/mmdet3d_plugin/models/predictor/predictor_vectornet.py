@@ -68,6 +68,8 @@ class VectorNet(nn.Module):
                  ):
         super(VectorNet, self).__init__()
 
+        self.hidden_size = hidden_size
+
         self.sub_graph = SubGraph(hidden_size)
 
         if True:
