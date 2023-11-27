@@ -1,8 +1,12 @@
+import mmcv
 import math
 import copy
 import torch
 import random
+import pyquaternion
 import numpy as np
+from os import path as osp
+from pyquaternion import Quaternion
 from typing import Dict, List, Tuple
 from collections import OrderedDict
 
@@ -14,6 +18,7 @@ from mmdet3d.core.bbox import Box3DMode, Coord3DMode, LiDARInstance3DBoxes
 from nuscenes import NuScenes
 from nuscenes.prediction import PredictHelper
 from nuscenes.eval.common.utils import Quaternion
+from nuscenes.utils.data_classes import Box as NuScenesBox
 from nuscenes.map_expansion.map_api import NuScenesMap, locations
 
 from . import utils
@@ -27,13 +32,15 @@ class StreamPredNuScenesDataset(NuScenesDataset):
 
     def __init__(self, 
                  collect_keys, 
+                 mini=False,
                  seq_mode=False, 
                  seq_split_num=1, 
                  num_frame_losses=1, 
                  queue_length=8, 
                  random_length=0,
                  predict_future_frame=12,
-                 predict_interval=1, 
+                 predict_interval=1,
+                 eval_version='detection_cvpr_2019', 
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.queue_length = queue_length
@@ -51,6 +58,12 @@ class StreamPredNuScenesDataset(NuScenesDataset):
         # for prediction
         self.predict_future_frame = predict_future_frame
         self.predict_interval = predict_interval
+
+        from nuscenes.eval.detection.config import config_factory
+        self.eval_version = eval_version
+        self.eval_detection_configs = config_factory(self.eval_version)
+
+        self.mini = mini
 
     def _set_sequence_group_flag(self):
         """
@@ -331,6 +344,88 @@ class StreamPredNuScenesDataset(NuScenesDataset):
                 continue
             return data
 
+
+    def _format_bbox(self, results, jsonfile_prefix=None):
+        """Convert the results to the standard format.
+
+        Args:
+            results (list[dict]): Testing results of the dataset.
+            jsonfile_prefix (str): The prefix of the output jsonfile.
+                You can specify the output directory/filename by
+                modifying the jsonfile_prefix. Default: None.
+
+        Returns:
+            str: Path of the output json file.
+        """
+        nusc_annos = {}
+        mapped_class_names = self.CLASSES
+
+        print('Start to convert detection format...')
+        for sample_id, det in enumerate(mmcv.track_iter_progress(results)):
+            annos = []
+            sample_token = self.data_infos[sample_id]['token']
+            if det is None:
+                nusc_annos[sample_token] = annos
+                continue
+
+            boxes = output_to_nusc_box_tracking(det)
+            boxes = lidar_nusc_box_to_global(self.data_infos[sample_id], 
+                                             boxes,
+                                             mapped_class_names,
+                                             self.eval_detection_configs,
+                                             self.eval_version,
+                                             include_prediction=True)
+            for i, box in enumerate(boxes):
+                name = mapped_class_names[box.label]
+                if np.sqrt(box.velocity[0] ** 2 + box.velocity[1] ** 2) > 0.2:
+                    if name in [
+                        'car',
+                        'construction_vehicle',
+                        'bus',
+                        'truck',
+                        'trailer',
+                    ]:
+                        attr = 'vehicle.moving'
+                    elif name in ['bicycle', 'motorcycle']:
+                        attr = 'cycle.with_rider'
+                    else:
+                        attr = NuScenesDataset.DefaultAttribute[name]
+                else:
+                    if name in ['pedestrian']:
+                        attr = 'pedestrian.standing'
+                    elif name in ['bus']:
+                        attr = 'vehicle.stopped'
+                    else:
+                        attr = NuScenesDataset.DefaultAttribute[name]
+
+                if True:
+                    nusc_anno = dict(
+                        sample_token=sample_token,
+                        translation=box.center.tolist(),
+                        size=box.wlh.tolist(),
+                        rotation=box.orientation.elements.tolist(),
+                        velocity=box.velocity[:2].tolist(),
+                        detection_name=name,
+                        detection_score=box.score,
+                        attribute_name=attr,
+                        # tracking_id=box.token,
+                        pred_outputs=box.pred_outputs if hasattr(box, 'pred_outputs') else None,
+                        pred_probs=box.pred_probs if hasattr(box, 'pred_probs') else None,
+                    )
+                # print(nusc_anno)
+                annos.append(nusc_anno)
+            nusc_annos[sample_token] = annos
+        nusc_submissions = {
+            'meta': self.modality,
+            'results': nusc_annos,
+        }
+
+        mmcv.mkdir_or_exist(jsonfile_prefix)
+        if True:
+            res_path = osp.join(jsonfile_prefix, 'results_nusc.json')
+        print('Results writes to', res_path)
+        mmcv.dump(nusc_submissions, res_path)
+        return res_path
     
     ###############################################################################
     ################################## for prediction #############################
@@ -356,8 +451,10 @@ class StreamPredNuScenesDataset(NuScenesDataset):
 
     
     def prepare_nuscenes(self):
-        # self.nuscenes = NuScenes('v1.0-trainval/', dataroot=self.data_root)
-        self.nuscenes = NuScenes('v1.0-mini', dataroot=self.data_root)
+        if self.mini:
+            self.nuscenes = NuScenes('v1.0-mini', dataroot=self.data_root)
+        else:
+            self.nuscenes = NuScenes('v1.0-trainval/', dataroot=self.data_root)
         self.helper = PredictHelper(self.nuscenes)
         self.maps = load_all_maps(self.helper)
 
@@ -602,7 +699,91 @@ def convert_egopose_to_matrix_numpy(rotation, translation):
     transformation_matrix[3, 3] = 1.0
     return transformation_matrix
 
+def lidar_nusc_box_to_global(info,
+                             boxes,
+                             classes,
+                             eval_configs,
+                             eval_version='detection_cvpr_2019',
+                             include_prediction=False,
+                             ):
+    box_list = []
+    for box in boxes:
+        # Move box to ego vehicle coord system
+        box.rotate(pyquaternion.Quaternion(info['lidar2ego_rotation']))
+        box.translate(np.array(info['lidar2ego_translation']))
+        # filter det in ego.
+        cls_range_map = eval_configs.class_range
+        radius = np.linalg.norm(box.center[:2], 2)
+        det_range = cls_range_map[classes[box.label]]
+        if radius > det_range:
+            continue
+        # Move box to global coord system
+        box.rotate(pyquaternion.Quaternion(info['ego2global_rotation']))
+        box.translate(np.array(info['ego2global_translation']))
+        box_list.append(box)
 
+        if include_prediction:
+            assert hasattr(box, 'pred_outputs')
+            if box.pred_outputs is not None:
+                # Move pred outputs from ego to global
+                assert box.pred_outputs.shape == (6, 12, 2)
+                for i in range(box.pred_outputs.shape[0]):
+                    for j in range(box.pred_outputs.shape[1]):
+                        box.pred_outputs[i, j] = utils.get_transform_and_rotate(box.pred_outputs[i, j], np.array(info['lidar2ego_translation']), np.array(info['lidar2ego_rotation']))
+                        box.pred_outputs[i, j] = utils.get_transform_and_rotate(box.pred_outputs[i, j], np.array(info['ego2global_translation']), np.array(info['ego2global_rotation']))
+            else:
+                box.pred_outputs = np.zeros((6, 12, 2))
+                translation = np.array([box.center[0], box.center[1]])
+                box.pred_outputs[:] = translation[np.newaxis, np.newaxis, :]
+
+    return box_list
+
+def output_to_nusc_box_tracking(detection):
+    box3d = detection['boxes_3d']
+
+    # overwrite the scores with the tracking scores
+    if 'track_scores' in detection.keys() and detection['track_scores'] is not None:
+        scores = detection['track_scores'].numpy()
+    else:
+        scores = detection['scores_3d'].numpy()
+
+    labels = detection['labels_3d'].numpy()
+    pred_outputs_in_ego = detection.get('pred_outputs', None)
+    pred_probs_in_ego = detection.get('pred_probs', None)
+
+    if 'track_ids' in detection.keys() and detection['track_ids'] is not None:
+        track_ids = detection['track_ids']
+    else:
+        track_ids = [None for _ in range(len(box3d))]
+
+    box_gravity_center = box3d.gravity_center.numpy()
+    box_dims = box3d.dims.numpy()
+    box_yaw = box3d.yaw.numpy()
+    # TODO: check whether this is necessary
+    # with dir_offset & dir_limit in the head
+    box_yaw = -box_yaw - np.pi / 2
+
+    box_list = []
+    for i in range(len(box3d)):
+        quat = pyquaternion.Quaternion(axis=[0, 0, 1], radians=box_yaw[i])
+        velocity = (*box3d.tensor[i, 7:9], 0.0)
+        # velo_val = np.linalg.norm(box3d[i, 7:9])
+        # velo_ori = box3d[i, 6]
+        # velocity = (
+        # velo_val * np.cos(velo_ori), velo_val * np.sin(velo_ori), 0.0)
+        box = NuScenesTrackingBox(
+            box_gravity_center[i],
+            box_dims[i],
+            quat,
+            label=labels[i],
+            score=scores[i],
+            velocity=velocity,
+            token=str(track_ids[i]),
+            pred_outputs=pred_outputs_in_ego[i].cpu().numpy() if pred_outputs_in_ego is not None else None,
+            pred_probs=pred_probs_in_ego[i].cpu().numpy() if pred_probs_in_ego is not None else None,
+        )
+        box_list.append(box)
+    return box_list
 ###############################################################################
 ################################## for prediction #############################
 
@@ -647,3 +828,39 @@ def get_lanes_in_radius(x: float, y: float, radius: float,
     return lanes
 ###############################################################################
 
+
+class NuScenesTrackingBox(NuScenesBox):
+    def __init__(self,
+                 center: List[float],
+                 size: List[float],
+                 orientation: Quaternion,
+                 label: int = np.nan,
+                 score: float = np.nan,
+                 velocity: Tuple = (np.nan, np.nan, np.nan),
+                 name: str = None,
+                 token: str = None,
+                 pred_outputs: np.ndarray = None,
+                 pred_probs: np.ndarray = None,
+                 ):
+        """
+        :param center: Center of box given as x, y, z.
+        :param size: Size of box in width, length, height.
+        :param orientation: Box orientation.
+        :param label: Integer label, optional.
+        :param score: Classification score, optional.
+        :param velocity: Box velocity in x, y, z direction.
+        :param name: Box name, optional. Can be used e.g. for denote category name.
+        :param token: Unique string identifier from DB.
+        """
+        super(NuScenesTrackingBox, self).__init__(center, size, orientation, label,
+                                                  score, velocity, name, token)
+        self.pred_outputs = pred_outputs
+        self.pred_probs = pred_probs
+
+    def rotate(self, quaternion: Quaternion) -> None:
+        self.center = np.dot(quaternion.rotation_matrix, self.center)
+        self.orientation = quaternion * self.orientation
+        self.velocity = np.dot(quaternion.rotation_matrix, self.velocity)
+
+    def copy(self) -> 'NuScenesTrackingBox':
+        return copy.deepcopy(self)

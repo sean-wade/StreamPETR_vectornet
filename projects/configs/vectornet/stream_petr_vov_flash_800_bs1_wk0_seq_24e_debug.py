@@ -20,10 +20,11 @@ class_names = [
 
 do_prediction = True
 num_gpus = 1
-batch_size = 16
-num_workers = 4
-num_epochs = 2000
+batch_size = 1
+num_workers = 0
+num_epochs = 60
 base_lr = 1e-2
+scores_threshold = 0.35
 num_iters_per_epoch = 323 // (num_gpus * batch_size)
 # num_iters_per_epoch = 28130 // (num_gpus * batch_size)
 
@@ -31,18 +32,21 @@ queue_length = 1
 num_frame_losses = 1
 collect_keys_pred = ['pred_mapping', 'pred_polyline_spans', 'pred_matrix', 'future_traj', 'future_traj_is_valid', 'past_traj', 'past_traj_is_valid']
 collect_keys=['lidar2img', 'intrinsics', 'extrinsics','timestamp', 'img_timestamp', 'ego_pose', 'ego_pose_inv'] + collect_keys_pred
+
 input_modality = dict(
     use_lidar=False,
     use_camera=True,
     use_radar=False,
     use_map=False,
     use_external=True)
+
 model = dict(
-    type='Petr3D',
+    type='Petr3D_Vip3d',
     num_frame_head_grads=num_frame_losses,
     num_frame_backbone_grads=num_frame_losses,
     num_frame_losses=num_frame_losses,
     use_grid_mask=True,
+    scores_threshold = scores_threshold,
     img_backbone=dict(
         type='VoVNetCP', ###use checkpoint to save memory
         spec_name='V-99-eSE',
@@ -77,7 +81,7 @@ model = dict(
             centers2d_cost=dict(type='BBox3DL1Cost', weight=10.0)))
         ),
     pts_bbox_head=dict(
-        type='StreamPETRHead',
+        type='StreamPETRVIP3DHead',
         num_classes=10,
         in_channels=256,
         num_query=644,
@@ -145,6 +149,25 @@ model = dict(
     agents_layer_0=True,
     agents_layer_0_num=2,
     add_branch=True,
+    add_branch_attention = dict(
+        type='DetrTransformerDecoderLayer',
+        attn_cfgs=[
+            dict(
+                type='MultiheadAttention',
+                embed_dims=256,
+                num_heads=8,
+                dropout=0.1),
+            dict(
+                type='Detr3DCrossAtten',
+                pc_range=point_cloud_range,
+                num_points=1,
+                embed_dims=256,
+            )
+        ],
+        feedforward_channels=512,
+        ffn_dropout=0.1,
+        operation_order=('self_attn', 'norm', 'cross_attn', 'norm',
+                         'ffn', 'norm')),
     predictor=dict(
         hidden_size=128,
         laneGCN=True,

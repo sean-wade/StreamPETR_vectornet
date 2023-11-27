@@ -348,10 +348,10 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
                 batch_pred_probs.append(None)
                 continue
             
-            future_traj             = data['future_traj'][b]
-            future_traj_is_valid    = data['future_traj_is_valid'][b]
-            past_traj               = data['past_traj'][b]
-            past_traj_is_valid      = data['past_traj_is_valid'][b]
+            future_traj          = data['future_traj'][b]
+            future_traj_is_valid = data['future_traj_is_valid'][b]
+            past_traj            = data['past_traj'][b]
+            past_traj_is_valid   = data['past_traj_is_valid'][b]
 
             pred_query = pred_feats["query"][b][pred_feats["pred_inds"][b]>0].contiguous()
             pred_reference_points = pred_feats['reference_points'][b][pred_feats["pred_inds"][b]>0].contiguous()
@@ -371,7 +371,7 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
             
             pred_inds = pred_feats['pred_inds'][b][torch.nonzero(pred_feats['pred_inds'][b])] - 1  # 减1是因为，本来索引就是+1过的(为了和填充的0区分开)
             labels = np.array([future_traj[i].numpy() for i in pred_inds])
-            labels_is_valid = np.array([future_traj_is_valid[i].numpy() for i in pred_inds]).squeeze()
+            labels_is_valid = np.array([future_traj_is_valid[i].numpy() for i in pred_inds]).reshape(-1, 12)
         
             kwargs = {'pred_matrix': [data['pred_matrix'][b]],
                       'pred_polyline_spans': [data['pred_polyline_spans'][b]],
@@ -381,7 +381,7 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
                                                     device=query.device,
                                                     labels=[labels],
                                                     labels_is_valid=[labels_is_valid],
-                                                   **kwargs)
+                                                    **kwargs)
             total_pred_loss = total_pred_loss + pred_loss
             batch_pred_outputs.append(pred_output['pred_outputs'].squeeze())
             batch_pred_probs.append(pred_output['pred_probs'].squeeze())
@@ -438,12 +438,21 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
 
         if self.do_pred:
             outs, pred_feats = self.pts_bbox_head(location, img_metas, topk_indexes, **data)
-            outs, _ = self.do_predict_test(outs, pred_feats, img_metas, **data)
+            outs.update(pred_feats)
+            bbox_list, pred_outs_list = self.pts_bbox_head.get_bboxes(outs, img_metas)
+            bbox_list = self.do_predict_test(bbox_list, pred_outs_list, img_metas, **data)
+            results = dict(
+                        boxes_3d=bbox_list[0][0].to('cpu'),
+                        scores_3d=bbox_list[0][1].cpu(),
+                        labels_3d=bbox_list[0][2].cpu(),
+                        pred_outputs=bbox_list[0][3],
+                        pred_probs=bbox_list[0][4])
+            return [results]
         else:
             outs = self.pts_bbox_head(location, img_metas, topk_indexes, **data)
 
         # outs, _ = self.pts_bbox_head(location, img_metas, topk_indexes, **data)
-        bbox_list = self.pts_bbox_head.get_bboxes(outs, img_metas)
+        bbox_list,_ = self.pts_bbox_head.get_bboxes(outs, img_metas)
         bbox_results = [
             bbox3d2result(bboxes, scores, labels)
             for bboxes, scores, labels in bbox_list
@@ -451,21 +460,13 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
         return bbox_results
 
 
-    def do_predict_test(self, outs, pred_feats, img_metas, **data):
+    def do_predict_test(self, bbox_list, pred_outs_list, img_metas, **data):
         tmp_img_metas = img_metas[0].copy()
         tmp_img_metas['lidar2img'] = data["lidar2img"]
 
-        # get activate object/query
-        pred_scores = outs['all_cls_scores'][-1, 0, :].sigmoid().max(dim=-1).values
-        pred_mask = pred_scores > self.scores_threshold
-        outs['all_cls_scores'] = outs['all_cls_scores'][-1,0,pred_mask]
-        outs['all_bbox_preds'] = outs['all_bbox_preds'][-1,0,pred_mask]
-        pred_feats['query'] = pred_feats['query'][0,pred_mask]
-        pred_feats['reference_points'] = pred_feats['reference_points'][pred_mask]
-
-        # process pred_feats
-        pred_query = pred_feats["query"].contiguous()
-        pred_reference_points = pred_feats['reference_points'].contiguous()
+        #process pred_feats
+        pred_query = pred_outs_list[0]["pred_query"].contiguous()
+        pred_reference_points = pred_outs_list[0]['reference_points'].contiguous()
         pred_reference_points = pred_utils.reference_points_lidar_to_relative(pred_reference_points, self.pts_bbox_head.pc_range)
 
         if self.add_branch:
@@ -484,17 +485,16 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
         labels_is_valid_list = [np.zeros((12))] * len(output_embedding)
 
         kwargs = {'pred_matrix': [data['pred_matrix'][0]],
-                    'pred_polyline_spans': [data['pred_polyline_spans'][0]],
-                    'pred_mapping': [data['pred_mapping'][0]],}
+                'pred_polyline_spans': [data['pred_polyline_spans'][0]],
+                'pred_mapping': [data['pred_mapping'][0]],}
         
-        pred_loss, pred_outputs, _ = self.predictor(agents=output_embedding.unsqueeze(0), #[1,n,256]
+        pred_loss, pred_outputs, _ = self.predictor(agents=output_embedding.unsqueeze(0),   #[1,n,256]
                                                 device=query.device,
                                                 labels=[np.array(labels_list)],    #list(array(n,12,2))
-                                                labels_is_valid=[np.array(labels_is_valid_list)], #list(array(n,12))
+                                                labels_is_valid=[np.array(labels_is_valid_list)],   #list(array(n,12))
                                                 **kwargs)
         
-
-
-        outs.update(pred_outputs)
-        return outs
+        bbox_list[0].append(pred_outputs['pred_outputs'][0])
+        bbox_list[0].append(pred_outputs['pred_probs'][0].softmax(-1))
+        return bbox_list
     

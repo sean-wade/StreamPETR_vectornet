@@ -36,7 +36,7 @@ class NMSFreeCoderPredict(BaseBBoxCoder):
     def encode(self):
         pass
 
-    def decode_single(self, cls_scores, bbox_preds, pred_trajs, pred_probs):
+    def decode_single(self, cls_scores, bbox_preds, pred_reference_points, pred_query):
         """Decode bboxes.
         Args:
             cls_scores (Tensor): Outputs from the classification head, \
@@ -49,21 +49,14 @@ class NMSFreeCoderPredict(BaseBBoxCoder):
             list[dict]: Decoded boxes.
         """
         max_num = self.max_num
-        if pred_trajs is not None:
-            assert pred_trajs.shape[0] == max_num, "Only surpport predict query num[%d] == nms_free_decoder max_num[%d] now!!!"%(pred_trajs.shape[0], max_num)
-
-        # # original decode way, may get unstable nums and different from post_memory's process.
-        # cls_scores = cls_scores.sigmoid()
-        # scores, indexs = cls_scores.view(-1).topk(max_num)
-        # labels = indexs % self.num_classes
-        # bbox_index = torch.div(indexs, self.num_classes, rounding_mode='floor')
-        # bbox_preds = bbox_preds[bbox_index]
 
         label_scores, labels = cls_scores.sigmoid().topk(1, dim=-1)
         _, topk_indexes = torch.topk(label_scores, max_num, dim=0)
         labels = labels[topk_indexes].squeeze()
         scores = label_scores[topk_indexes].squeeze()
         bbox_preds = bbox_preds[topk_indexes].squeeze()
+        pred_query = pred_query[topk_indexes].squeeze()
+        pred_reference_points = pred_reference_points[topk_indexes].squeeze()
 
         final_box_preds = denormalize_bbox(bbox_preds, self.pc_range)   
         final_scores = scores 
@@ -86,23 +79,23 @@ class NMSFreeCoderPredict(BaseBBoxCoder):
             boxes3d = final_box_preds[mask]
             scores = final_scores[mask]
             labels = final_preds[mask]
-            if pred_trajs is not None:
-                trajs_predict = pred_trajs[mask]
-                probs_predict = pred_probs[mask]
+            if pred_query is not None:
+                pred_query = pred_query[mask]
+                pred_reference_points = pred_reference_points[mask]
                 predictions_dict = {
                     'bboxes': boxes3d,
                     'scores': scores,
                     'labels': labels,
-                    'trajs_predict' : trajs_predict,
-                    'probs_predict' : probs_predict
+                    'pred_query' : pred_query,
+                    'reference_points' : pred_reference_points
                 }
             else:
                 predictions_dict = {
                     'bboxes': boxes3d,
                     'scores': scores,
                     'labels': labels,
-                    'trajs_predict' : None,
-                    'probs_predict' : None
+                    'pred_query' : None,
+                    'reference_points' : None
                 }
 
         else:
@@ -126,11 +119,11 @@ class NMSFreeCoderPredict(BaseBBoxCoder):
         all_cls_scores = preds_dicts['all_cls_scores'][-1]
         all_bbox_preds = preds_dicts['all_bbox_preds'][-1]
 
-        pred_trajs = preds_dicts["pred_outputs"]
-        pred_probs = preds_dicts["pred_probs"]
+        pred_reference_points = preds_dicts["reference_points"][None,]
+        pred_query = preds_dicts["query"]
         
         batch_size = all_cls_scores.size()[0]
         predictions_list = []
         for i in range(batch_size):
-            predictions_list.append(self.decode_single(all_cls_scores[i], all_bbox_preds[i], pred_trajs[i], pred_probs[i]))
+            predictions_list.append(self.decode_single(all_cls_scores[i], all_bbox_preds[i], pred_reference_points[i], pred_query[i]))
         return predictions_list

@@ -156,12 +156,12 @@ class VectorNet(nn.Module):
                 lane_states_batch.append(a)
 
         element_states_batch = []
-        if self.laneGCN:
+        if self.laneGCN and (len(agents_batch[i]) > 0 and len(lane_states_batch[i]) > 0):
             for i in range(batch_size):
                 # map_start_polyline_idx = mapping[i]['map_start_polyline_idx']
                 agents = agents_batch[i]
                 lanes = lane_states_batch[i]
-                assert len(agents) > 0 and len(lanes) > 0
+                # assert len(agents) > 0 and len(lanes) > 0
 
                 lanes = lanes + self.laneGCN_A2L(lanes.unsqueeze(0), torch.cat([lanes, agents]).unsqueeze(0)).squeeze(0)
                 # else:

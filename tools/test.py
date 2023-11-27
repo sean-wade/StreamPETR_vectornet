@@ -27,9 +27,9 @@ import os.path as osp
 def parse_args():
     parser = argparse.ArgumentParser(
         description='MMDet test (and eval) a model')
-    parser.add_argument('--config', help='test config file path', default="projects/configs/pred/stream_petr_vov_flash_800_bs2_seq_24e.py")
+    parser.add_argument('--config', help='test config file path', default="projects/configs/pred2/stream_petr_vov_flash_800_bs16_wk4_seq_24e.py")
     # parser.add_argument('--config', help='test config file path', default="projects/configs/StreamPETR/stream_petr_vov_flash_800_bs2_seq_24e.py")
-    parser.add_argument('--checkpoint', help='checkpoint file', default="work_dirs/stream_petr_vov_flash_800_bs2_seq_24e/latest.pth")
+    parser.add_argument('--checkpoint', help='checkpoint file', default="work_dirs/stream_petr_vov_flash_800_bs16_wk4_seq_24e/latest.pth")
     # parser.add_argument('--checkpoint', help='checkpoint file', default="../StreamPETR/pretrained/stream_petr_vov_flash_800_bs2_seq_24e.pth")
     parser.add_argument('--out', help='output result file in pickle format')
     parser.add_argument(

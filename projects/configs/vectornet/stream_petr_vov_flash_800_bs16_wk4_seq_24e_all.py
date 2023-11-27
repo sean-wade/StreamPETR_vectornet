@@ -20,29 +20,37 @@ class_names = [
 
 do_prediction = True
 num_gpus = 1
-batch_size = 1
-num_workers = 0
-num_epochs = 60
-base_lr = 1e-2
-num_iters_per_epoch = 323 // (num_gpus * batch_size)
-# num_iters_per_epoch = 28130 // (num_gpus * batch_size)
+batch_size = 16
+num_workers = 4
+num_epochs = 24
+base_lr = 5e-3
+scores_threshold = 0.35
+# num_iters_per_epoch = 323 // (num_gpus * batch_size)
+num_iters_per_epoch = 28130 // (num_gpus * batch_size)
+
+# dataset_type = 'CustomNuScenesDataset'
+dataset_type = 'StreamPredNuScenesDataset'
+data_root = '/mnt/data/userdata/se/dataset/nusc/'
 
 queue_length = 1
 num_frame_losses = 1
 collect_keys_pred = ['pred_mapping', 'pred_polyline_spans', 'pred_matrix', 'future_traj', 'future_traj_is_valid', 'past_traj', 'past_traj_is_valid']
 collect_keys=['lidar2img', 'intrinsics', 'extrinsics','timestamp', 'img_timestamp', 'ego_pose', 'ego_pose_inv'] + collect_keys_pred
+
 input_modality = dict(
     use_lidar=False,
     use_camera=True,
     use_radar=False,
     use_map=False,
     use_external=True)
+
 model = dict(
-    type='Petr3D',
+    type='Petr3D_Vip3d',
     num_frame_head_grads=num_frame_losses,
     num_frame_backbone_grads=num_frame_losses,
     num_frame_losses=num_frame_losses,
     use_grid_mask=True,
+    scores_threshold = scores_threshold,
     img_backbone=dict(
         type='VoVNetCP', ###use checkpoint to save memory
         spec_name='V-99-eSE',
@@ -77,7 +85,7 @@ model = dict(
             centers2d_cost=dict(type='BBox3DL1Cost', weight=10.0)))
         ),
     pts_bbox_head=dict(
-        type='StreamPETRHead',
+        type='StreamPETRVIP3DHead',
         num_classes=10,
         in_channels=256,
         num_query=644,
@@ -128,7 +136,9 @@ model = dict(
             pc_range=point_cloud_range,
             max_num=256,    # has to be 256 for now.
             voxel_size=voxel_size,
-            num_classes=10), 
+            num_classes=10,
+            score_threshold=0.35
+            ), 
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
@@ -145,6 +155,25 @@ model = dict(
     agents_layer_0=True,
     agents_layer_0_num=2,
     add_branch=True,
+    add_branch_attention = dict(
+        type='DetrTransformerDecoderLayer',
+        attn_cfgs=[
+            dict(
+                type='MultiheadAttention',
+                embed_dims=256,
+                num_heads=8,
+                dropout=0.1),
+            dict(
+                type='Detr3DCrossAtten',
+                pc_range=point_cloud_range,
+                num_points=1,
+                embed_dims=256,
+            )
+        ],
+        feedforward_channels=512,
+        ffn_dropout=0.1,
+        operation_order=('self_attn', 'norm', 'cross_attn', 'norm',
+                         'ffn', 'norm')),
     predictor=dict(
         hidden_size=128,
         laneGCN=True,
@@ -169,10 +198,6 @@ model = dict(
             iou_cost=dict(type='IoUCost', weight=0.0), # Fake cost. This is just to make it compatible with DETR head. 
             pc_range=point_cloud_range),)))
 
-
-# dataset_type = 'CustomNuScenesDataset'
-dataset_type = 'StreamPredNuScenesDataset'
-data_root = './data/nuscenes/'
 
 file_client_args = dict(backend='disk')
 
@@ -235,7 +260,7 @@ data = dict(
     train=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + 'nuscenes2d_with_id_temporal_infos_train.pkl',
+        ann_file=data_root + 'nuscenes2d_temporal_infos_train.pkl',
         num_frame_losses=num_frame_losses,
         seq_split_num=2, # streaming video training
         seq_mode=True, # streaming video training
@@ -254,7 +279,7 @@ data = dict(
              pipeline=test_pipeline, 
              collect_keys=collect_keys + ['img', 'img_metas'], 
              queue_length=queue_length, 
-             ann_file=data_root + 'nuscenes2d_with_id_temporal_infos_val.pkl', 
+             ann_file=data_root + 'nuscenes2d_temporal_infos_val.pkl', 
              classes=class_names, 
              modality=input_modality),
     test=dict(type=dataset_type,
@@ -263,7 +288,7 @@ data = dict(
               pipeline=test_pipeline, 
               collect_keys=collect_keys + ['img', 'img_metas'], 
               queue_length=queue_length, 
-              ann_file=data_root + 'nuscenes2d_with_id_temporal_infos_val.pkl', 
+              ann_file=data_root + 'nuscenes2d_temporal_infos_val.pkl', 
               classes=class_names, 
               modality=input_modality),
     shuffler_sampler=dict(type='InfiniteGroupEachSampleInBatchSampler'),
@@ -295,6 +320,7 @@ find_unused_parameters=False #### when use checkpoint, find_unused_parameters mu
 checkpoint_config = dict(interval=num_iters_per_epoch, max_keep_ckpts=3)
 runner = dict(
     type='IterBasedRunner', max_iters=num_epochs * num_iters_per_epoch)
-load_from='../StreamPETR/pretrained/stream_petr_vov_flash_800_bs2_seq_24e.pth'
+# load_from='../StreamPETR/pretrained/stream_petr_vov_flash_800_bs2_seq_24e.pth'
+load_from='work_dirs/mini/E2_stream_petr_vov_flash_800_bs16_wk4_seq_24e/latest.pth'
 # load_from=None
 resume_from=None

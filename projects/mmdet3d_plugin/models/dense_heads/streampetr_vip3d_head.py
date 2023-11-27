@@ -1066,12 +1066,18 @@ class StreamPETRVIP3DHead(AnchorFreeHead):
         num_samples = len(preds_dicts)
 
         ret_list = []
+        pred_outs_list = []
         for i in range(num_samples):
             preds = preds_dicts[i]
             bboxes = preds['bboxes'] #[300,9]  [cx, cy, cz, w, l, h, rot, vx, vy]
             bboxes[:, 2] = bboxes[:, 2] - bboxes[:, 5] * 0.5
-            bboxes = img_metas[i]['box_type_3d'][0](bboxes, bboxes.size(-1))
+            bboxes = img_metas[i]['box_type_3d'](bboxes, bboxes.size(-1))
             scores = preds['scores']
             labels = preds['labels']
             ret_list.append([bboxes, scores, labels])
-        return ret_list
+        
+            pred_outs_list.append({
+                "pred_query":preds_dicts[i]['pred_query'],
+                "reference_points":preds_dicts[i]['reference_points'],
+            })
+        return ret_list,pred_outs_list
