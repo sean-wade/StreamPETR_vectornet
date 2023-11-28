@@ -4,9 +4,9 @@ import json
 from visual_nuscenes import NuScenes
 
 use_gt = False
-out_dir = './result_vis/'
-# result_json = "work_dirs/pp-nus/results_eval/pts_bbox/results_nusc"
-result_json = "val/work_dirs/stream_petr_vov_flash_800_bs2_seq_24e/Wed_Nov_22_02_46_04_2023/pts_bbox/results_nusc"
+result_path = "work_dirs/test/stream_petr_vov_flash_800_bs16_wk4_seq_24e/Mon_Nov_27_07_24_32_2023"
+out_dir = result_path + '/result_vis/'
+result_json = result_path + "/pts_bbox/results_nusc"
 dataroot='./data/nuscenes'
 if not os.path.exists(out_dir):
     os.mkdir(out_dir)
@@ -22,7 +22,7 @@ tokens = list(table['results'].keys())
 
 for token in tqdm.tqdm(tokens[:100]):
     if use_gt:
-        nusc.render_sample(token, out_path = "./result_vis/"+token+"_gt.png", verbose=False)
+        nusc.render_sample(token, out_path = out_dir + token + "_gt.png", verbose=False)
     else:
-        nusc.render_sample(token, out_path = "./result_vis/"+token+"_pred.png", verbose=False)
+        nusc.render_sample(token, out_path = out_dir + token + "_pred.png", verbose=False)
 
