@@ -1,0 +1,2 @@
+flash_attn==0.2.2
+einops==0.7.0

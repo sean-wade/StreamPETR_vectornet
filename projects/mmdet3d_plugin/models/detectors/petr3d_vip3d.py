@@ -348,7 +348,7 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
                 batch_pred_probs.append(None)
                 continue
             
-            future_traj          = data['future_traj'][b]
+            future_traj          = data['future_traj_relative'][b] if self.relative_pred else data['future_traj'][b]
             future_traj_is_valid = data['future_traj_is_valid'][b]
             past_traj            = data['past_traj'][b]
             past_traj_is_valid   = data['past_traj_is_valid'][b]
@@ -494,7 +494,14 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
                                                 labels_is_valid=[np.array(labels_is_valid_list)],   #list(array(n,12))
                                                 **kwargs)
         
+        if self.relative_pred:
+            centers_2d = bbox_list[0][0].center[:,:2].cpu().numpy()
+            for j in range(len(centers_2d)):
+                normalizer = pred_utils.Normalizer(centers_2d[j][0], centers_2d[j][1], 0.0)
+                for k in range(len(pred_outputs['pred_outputs'][0][j])):
+                    pred_outputs['pred_outputs'][0][j][k] = normalizer(pred_outputs['pred_outputs'][0][j][k], reverse=True)
+        
         bbox_list[0].append(pred_outputs['pred_outputs'][0])
-        bbox_list[0].append(pred_outputs['pred_probs'][0].softmax(-1))
+        bbox_list[0].append(pred_outputs['pred_probs'][0])
         return bbox_list
     

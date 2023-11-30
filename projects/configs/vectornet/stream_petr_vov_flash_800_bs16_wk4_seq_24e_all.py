@@ -1,6 +1,6 @@
 _base_ = [
-    '../../../mmdetection3d/configs/_base_/datasets/nus-3d.py',
-    '../../../mmdetection3d/configs/_base_/default_runtime.py'
+    '/workspace/mmdetection3d/configs/_base_/datasets/nus-3d.py',
+    '/workspace/mmdetection3d/configs/_base_/default_runtime.py'
 ]
 backbone_norm_cfg = dict(type='LN', requires_grad=True)
 plugin=True
@@ -18,6 +18,7 @@ class_names = [
     'motorcycle', 'bicycle', 'pedestrian', 'traffic_cone'
 ]
 
+use_mini = False
 do_prediction = True
 num_gpus = 1
 batch_size = 16
@@ -30,7 +31,7 @@ num_iters_per_epoch = 28130 // (num_gpus * batch_size)
 
 # dataset_type = 'CustomNuScenesDataset'
 dataset_type = 'StreamPredNuScenesDataset'
-data_root = '/mnt/data/userdata/se/dataset/nusc/'
+data_root = '/mnt/data/dataset/nuScenes/nuscenes_mini/' if use_mini else '/mnt/data/dataset/nuScenes/nuscenes'
 
 queue_length = 1
 num_frame_losses = 1
@@ -264,6 +265,7 @@ data = dict(
         num_frame_losses=num_frame_losses,
         seq_split_num=2, # streaming video training
         seq_mode=True, # streaming video training
+        mini=use_mini,
         pipeline=train_pipeline,
         classes=class_names,
         modality=input_modality,
@@ -275,7 +277,8 @@ data = dict(
         box_type_3d='LiDAR'),
     val=dict(type=dataset_type,
              data_root=data_root, 
-             test_mode=True, 
+             test_mode=True,
+             mini=use_mini, 
              pipeline=test_pipeline, 
              collect_keys=collect_keys + ['img', 'img_metas'], 
              queue_length=queue_length, 
@@ -284,7 +287,8 @@ data = dict(
              modality=input_modality),
     test=dict(type=dataset_type,
               data_root=data_root, 
-              test_mode=True, 
+              test_mode=True,
+              mini=use_mini, 
               pipeline=test_pipeline, 
               collect_keys=collect_keys + ['img', 'img_metas'], 
               queue_length=queue_length, 

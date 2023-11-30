@@ -31,7 +31,8 @@ class StreamPredNuScenesDataset(NuScenesDataset):
     """
 
     def __init__(self, 
-                 collect_keys, 
+                 collect_keys,
+                 collect_keys_pred, 
                  mini=False,
                  seq_mode=False, 
                  seq_split_num=1, 
@@ -45,6 +46,7 @@ class StreamPredNuScenesDataset(NuScenesDataset):
         super().__init__(*args, **kwargs)
         self.queue_length = queue_length
         self.collect_keys = collect_keys
+        self.collect_keys_pred = collect_keys_pred
         self.random_length = random_length
         self.num_frame_losses = num_frame_losses
         self.seq_mode = seq_mode
@@ -166,7 +168,7 @@ class StreamPredNuScenesDataset(NuScenesDataset):
     def union2one(self, queue):
         for key in self.collect_keys:
             # if key != 'img_metas':
-            if key not in ['img_metas', 'pred_mapping', 'pred_polyline_spans', 'pred_matrix', 'future_traj', 'future_traj_is_valid', 'past_traj', 'past_traj_is_valid']:
+            if key not in ['img_metas'] + self.collect_keys_pred:
                 queue[-1][key] = DC(torch.stack([each[key].data for each in queue]), cpu_only=False, stack=True, pad_dims=None)
             else:
                 queue[-1][key] = DC([each[key].data for each in queue], cpu_only=True)
@@ -601,6 +603,7 @@ class StreamPredNuScenesDataset(NuScenesDataset):
                 future_traj_is_valid = np.zeros(future_frame_num, dtype=np.int32),
                 past_traj = np.zeros((past_frame_num + 1, 2), dtype=np.float32),
                 past_traj_is_valid = np.zeros(past_frame_num + 1, dtype=np.int32),
+                future_traj_relative=np.zeros((future_frame_num, 2), dtype=np.float32),
             )
 
         # if past 2 scene same, get past 2 trajs
@@ -654,9 +657,12 @@ class StreamPredNuScenesDataset(NuScenesDataset):
                     box = utils.get_transform_and_rotate_box(box, cur_e2g_t, cur_e2g_r, reverse=True)   #  global -> ego_t0
                     box = utils.get_transform_and_rotate_box(box, cur_l2e_t, cur_l2e_r, reverse=True)   #  ego_t0 -> lidar_t0
                     point = box.center
-
+                    
                     curr_id_pf_dict[ind]['future_traj'][f - index - 1] = point[0], point[1]
                     curr_id_pf_dict[ind]['future_traj_is_valid'][f - index - 1] = 1
+
+                    normalizer = utils.Normalizer(curr_id_pf_dict[ind]['past_traj'][-1,0], curr_id_pf_dict[ind]['past_traj'][-1,1], 0.0)
+                    curr_id_pf_dict[ind]['future_traj_relative'][f - index - 1] = normalizer(point[:2])
 
         data_dict['pred_mapping'].update(
             dict(
@@ -676,6 +682,7 @@ class StreamPredNuScenesDataset(NuScenesDataset):
                 'future_traj_is_valid' : np.array([curr_id_pf_dict[ii]['future_traj_is_valid'] for ii in curr_id_pf_dict.keys()]),
                 'past_traj' : np.array([curr_id_pf_dict[ii]['past_traj'] for ii in curr_id_pf_dict.keys()]),
                 'past_traj_is_valid' : np.array([curr_id_pf_dict[ii]['past_traj_is_valid'] for ii in curr_id_pf_dict.keys()]),
+                'future_traj_relative' : np.array([curr_id_pf_dict[ii]['future_traj_relative'] for ii in curr_id_pf_dict.keys()]),
             }
         )
 
