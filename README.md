@@ -3,94 +3,67 @@
 <h3>Add trajectory prediction branch for StreamPETR(using vectornet like ViP3D)</h3>
 </div>
 
+## Introduction
 
-streampetr 的 CustomNuScenesDataset：
-```
-    __init__ 中多几个参数
-
-            collect_keys, 
-            seq_mode=False, 
-            seq_split_num=1, 
-            num_frame_losses=1, 
-            queue_length=8, 
-            random_length=0,
-
-    def _set_sequence_group_flag(self)
+This is a repository which add prediction module from ViP3D to the StreamPETR model.
 
 
-
-    def prepare_train_data(self, index)
-
-
-
-    def prepare_test_data(self, index)
-
-
-
-    def union2one(self, queue)
-
-
-
-    def get_data_info(self, index)
-
-
-
-    def __getitem__(self, idx)
+## Getting Started
+* Environment Setup
 
 ```
-
-
-额外的 helper function：
-```
-    def invert_matrix_egopose_numpy(egopose)
-
-    def convert_egopose_to_matrix_numpy(rotation, translation)
+    docker pull a954217436/mmdet_series:v1.0
+    docker run -it --gpus all -v /home:/home -v /mnt:/mnt --network host --name sean_dev --shm-size 640G a954217436/mmdet_series:v1.0
 ```
 
+* Data Preparation
+```
+    # Please follow the ViP3D processing methods.
 
-pred_data 多了下面四个 keys:
-    ['instance_idx_2_labels', 'pred_matrix', 'polyline_spans', 'mapping']
+    1. Download nuscenes(or mini) dataset, organize as follows:
 
-    instance_idx_2_labels 的 keys:
-
-    dict_keys([794, 796, 797, 800, 801, 802, 803, 804, 805, 806, 807, 809, 810, 813, 814, 815, 816,
-                818, 819, 820, 822, 823, 825, 826, 827, 828, 829, 830, 833, 836, 842, 843, 844, 845, 
-                846, 847, 848, 850, 851, 853, 854, 855, 858, 859, 860, 861, 864, 865, 866, 868, 869, 870, 871, 873, 874, 875, 876, 821, 824, 863, 834])
-
-        instance_idx_2_labels['794'] 的 keys: 
-            ['future_traj',             12x2
-            'future_traj_relative',     12x2
-            'future_traj_is_valid',     12
-            'past_traj',                3x2
-            'past_traj_is_valid',       3
-            'category',                 3
-            'past_boxes'                3x7
-            ]
-
-
-    pred_matrix: 273*128
-
-    polyline_spans: [70 个 slice]
-
-    mapping 的 Keys:
-        cur_l2e_r:  1*4
-        cur_l2e_t:  1*3
-        cur_e2g_r: 1*4
-        cur_e2g_t: 1*3
-        r_index_2_rotation_and_transform:  {0：{}, 1:{}, 2：{} }
-        valid_pred:  True
-        instance_inds:  56,
-        lanes: L * (X * 2),  L 个 X*2 的 np.array, X不固定
-        map_name:  'singapore-hollandvillage'
-        timestamp:  1542800853.447313
-        timestamp_origin:  1542800853447313
-        sample_token:  'f65ffdc408fb4a0c8ef0d1614b47dce8'
-        scene_id:  'scene-1094'
-        same_scene:  True
-        index:  252
+        nuscenes_mini
+        ├── maps
+        │   ├── basemap
+        │   ├── expansion
+        │   └── prediction
+        ├── samples
+        │   ├── CAM_BACK
+        │   ├── CAM_BACK_LEFT
+        │   ├── CAM_BACK_RIGHT
+        │   ├── CAM_FRONT
+        │   ├── CAM_FRONT_LEFT
+        │   ├── CAM_FRONT_RIGHT
+        │   ├── LIDAR_TOP
+        │   ├── RADAR_BACK_LEFT
+        │   ├── RADAR_BACK_RIGHT
+        │   ├── RADAR_FRONT
+        │   ├── RADAR_FRONT_LEFT
+        │   └── RADAR_FRONT_RIGHT
+        └── v1.0-mini
 
 
+    2. Create train/val infos:
 
+        python tools/create_data_nusc.py
+```
+
+* Training and Inference
+
+    Please see the config files under projects/configs/vectornet.
+
+```
+    python tools/train.py --config projects/configs/vectornet/stream_petr_vov_flash_800_bs16_wk4_seq_24e_mini.py
+    python tools/test.py --config projects/configs/vectornet/stream_petr_vov_flash_800_bs16_wk4_seq_24e_mini.py
+```
+
+
+
+
+
+
+* Layers.
+```
 pts_bbox_head.code_weights
 pts_bbox_head.match_costs
 pts_bbox_head.pc_range
@@ -773,3 +746,4 @@ add_branch_attention.norms.1.weight
 add_branch_attention.norms.1.bias
 add_branch_attention.norms.2.weight
 add_branch_attention.norms.2.bias
+```
