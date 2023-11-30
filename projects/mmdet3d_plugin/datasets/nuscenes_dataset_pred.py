@@ -786,8 +786,8 @@ def output_to_nusc_box_tracking(detection):
             score=scores[i],
             velocity=velocity,
             token=str(track_ids[i]),
-            pred_outputs=pred_outputs_in_ego[i].cpu().numpy() if pred_outputs_in_ego is not None else None,
-            pred_probs=pred_probs_in_ego[i].cpu().numpy() if pred_probs_in_ego is not None else None,
+            pred_outputs=pred_outputs_in_ego[i] if pred_outputs_in_ego is not None else None,
+            pred_probs=pred_probs_in_ego[i] if pred_probs_in_ego is not None else None,
         )
         box_list.append(box)
     return box_list

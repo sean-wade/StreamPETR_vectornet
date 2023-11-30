@@ -52,6 +52,7 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
                  pretrained=None,
                  # for prediction
                  do_pred=False,
+                 only_pred_loss=True,
                  pred_embed_dims=256,
                  relative_pred=False,
                  agents_layer_0=False,
@@ -79,6 +80,7 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
 
         self.scores_threshold =scores_threshold
         self.do_pred = do_pred
+        self.only_pred_loss = only_pred_loss
         self.collect_keys_pred = collect_keys_pred
         self.pred_embed_dims = pred_embed_dims
         self.relative_pred = relative_pred
@@ -329,7 +331,13 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
             if self.do_pred:
                 pred_feats.update(pred_inds=pred_inds)
                 outs, pred_loss = self.do_predict_train(outs, pred_feats,img_metas, **data)
-                losses['pred_loss'] = pred_loss if pred_loss is not None else torch.zeros(1)
+                if self.only_pred_loss:
+                    return {
+                        'pred_loss' : pred_loss if pred_loss is not None else torch.zeros(1)
+                    }
+                else:
+                    losses['pred_loss'] = pred_loss if pred_loss is not None else torch.zeros(1)
+
             
             return losses
         else:

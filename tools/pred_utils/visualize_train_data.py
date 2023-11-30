@@ -75,7 +75,7 @@ def viz_test_data_item(data, save_path=None):
 
 if __name__ == "__main__":
     from tqdm import tqdm
-    cfg = Config.fromfile("projects/configs/pred/stream_petr_vov_flash_800_bs2_seq_24e.py")
+    cfg = Config.fromfile("projects/configs/vectornet/stream_petr_vov_flash_800_bs16_wk4_seq_24e_mini.py")
 
     plugin_dir = cfg.plugin_dir
     _module_dir = os.path.dirname(plugin_dir)

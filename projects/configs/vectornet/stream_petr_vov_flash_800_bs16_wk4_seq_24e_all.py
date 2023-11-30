@@ -27,7 +27,7 @@ num_epochs = 24
 base_lr = 5e-3
 scores_threshold = 0.35
 # num_iters_per_epoch = 323 // (num_gpus * batch_size)
-num_iters_per_epoch = 28130 // (num_gpus * batch_size)
+num_iters_per_epoch = 323 // (num_gpus * batch_size) if use_mini else 28130 // (num_gpus * batch_size)
 
 # dataset_type = 'CustomNuScenesDataset'
 dataset_type = 'StreamPredNuScenesDataset'
@@ -151,6 +151,7 @@ model = dict(
 
     # prediction from vip3d
     do_pred=do_prediction,
+    only_pred_loss=True,
     pred_embed_dims=256,
     relative_pred=True,
     agents_layer_0=True,
