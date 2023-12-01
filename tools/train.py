@@ -29,7 +29,7 @@ from mmcv.utils import TORCH_VERSION, digit_version
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
-    parser.add_argument('--config', help='test config file path', default="projects/configs/vectornet/stream_petr_vov_flash_800_bs16_wk4_seq_24e_all.py")
+    parser.add_argument('--config', help='test config file path', default="projects/configs/vectornet/stream_petr_vov_flash_800_bs1_wk0_seq_24e_debug.py")
     # parser.add_argument('--config', help='test config file path', default="projects/configs/StreamPETR_ZH/stream_petr_vov_flash_800_bs2_8key_24e.py")
     parser.add_argument('--work-dir', help='the dir to save logs and models')
     parser.add_argument(

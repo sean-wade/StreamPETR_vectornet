@@ -330,7 +330,7 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
 
             if self.do_pred:
                 pred_feats.update(pred_inds=pred_inds)
-                outs, pred_loss = self.do_predict_train(outs, pred_feats,img_metas, **data)
+                outs, pred_loss = self.do_predict_train(outs, pred_feats, img_metas, **data)
                 if self.only_pred_loss:
                     return {
                         'pred_loss' : pred_loss if pred_loss is not None else torch.zeros(1)
@@ -361,6 +361,10 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
             past_traj            = data['past_traj'][b]
             past_traj_is_valid   = data['past_traj_is_valid'][b]
 
+            pred_indexes = pred_feats["pred_inds"][b][pred_feats["pred_inds"][b]>0]
+            pred_reference_points = pred_reference_points[pred_indexes]
+
+            
             pred_query = pred_feats["query"][b][pred_feats["pred_inds"][b]>0].contiguous()
             pred_reference_points = pred_feats['reference_points'][b][pred_feats["pred_inds"][b]>0].contiguous()
             pred_reference_points = pred_utils.reference_points_lidar_to_relative(pred_reference_points, self.pts_bbox_head.pc_range)

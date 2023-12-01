@@ -198,8 +198,8 @@ class VectorNet(nn.Module):
         mapping = pred_mapping
         if 'work_dir' in mapping and np.random.randint(20) == 0:
             print(f'work_dir {mapping["work_dir"]}')
-        if np.random.randint(0, 50) == 0:
-            print('index', mapping[0]['index'], device)
+        # if np.random.randint(0, 50) == 0:
+        #     print('index', mapping[0]['index'], device)
         if agents is not None:
             agents = [each[:, :128] for each in agents]
         # TODO(cyrushx): Can you explain the structure of polyline spans?

@@ -23,19 +23,20 @@ do_prediction = True
 num_gpus = 1
 batch_size = 16
 num_workers = 4
-num_epochs = 24
+num_epochs = 200 if use_mini else 50
 base_lr = 5e-3
 scores_threshold = 0.35
 # num_iters_per_epoch = 323 // (num_gpus * batch_size)
 num_iters_per_epoch = 323 // (num_gpus * batch_size) if use_mini else 28130 // (num_gpus * batch_size)
+ckpt = 'work_dirs/stream_petr_vov_flash_800_bs16_wk4_seq_24e_mini/latest.pth'
 
 # dataset_type = 'CustomNuScenesDataset'
 dataset_type = 'StreamPredNuScenesDataset'
-data_root = '/mnt/data/dataset/nuScenes/nuscenes_mini/' if use_mini else '/mnt/data/dataset/nuScenes/nuscenes'
+data_root = '/mnt/data/dataset/nuScenes/nuscenes_mini/' if use_mini else '/mnt/data/dataset/nuScenes/nuscenes/'
 
 queue_length = 1
 num_frame_losses = 1
-collect_keys_pred = ['pred_mapping', 'pred_polyline_spans', 'pred_matrix', 'future_traj', 'future_traj_is_valid', 'past_traj', 'past_traj_is_valid']
+collect_keys_pred = ['pred_mapping', 'pred_polyline_spans', 'pred_matrix', 'future_traj', 'future_traj_is_valid', 'past_traj', 'past_traj_is_valid', 'future_traj_relative']
 collect_keys=['lidar2img', 'intrinsics', 'extrinsics','timestamp', 'img_timestamp', 'ego_pose', 'ego_pose_inv'] + collect_keys_pred
 
 input_modality = dict(
@@ -262,7 +263,7 @@ data = dict(
     train=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + 'nuscenes2d_temporal_infos_train.pkl',
+        ann_file=data_root + 'nuscenes_tracking_streampetr_vip3d_infos_train.pkl',
         num_frame_losses=num_frame_losses,
         seq_split_num=2, # streaming video training
         seq_mode=True, # streaming video training
@@ -271,6 +272,7 @@ data = dict(
         classes=class_names,
         modality=input_modality,
         collect_keys=collect_keys + ['img', 'prev_exists', 'img_metas'],
+        collect_keys_pred = collect_keys_pred,
         queue_length=queue_length,
         test_mode=False,
         use_valid_flag=True,
@@ -282,8 +284,9 @@ data = dict(
              mini=use_mini, 
              pipeline=test_pipeline, 
              collect_keys=collect_keys + ['img', 'img_metas'], 
+             collect_keys_pred = collect_keys_pred,
              queue_length=queue_length, 
-             ann_file=data_root + 'nuscenes2d_temporal_infos_val.pkl', 
+             ann_file=data_root + 'nuscenes_tracking_streampetr_vip3d_infos_val.pkl', 
              classes=class_names, 
              modality=input_modality),
     test=dict(type=dataset_type,
@@ -292,8 +295,9 @@ data = dict(
               mini=use_mini, 
               pipeline=test_pipeline, 
               collect_keys=collect_keys + ['img', 'img_metas'], 
+              collect_keys_pred = collect_keys_pred,
               queue_length=queue_length, 
-              ann_file=data_root + 'nuscenes2d_temporal_infos_val.pkl', 
+              ann_file=data_root + 'nuscenes_tracking_streampetr_vip3d_infos_val.pkl', 
               classes=class_names, 
               modality=input_modality),
     shuffler_sampler=dict(type='InfiniteGroupEachSampleInBatchSampler'),
@@ -325,7 +329,7 @@ find_unused_parameters=False #### when use checkpoint, find_unused_parameters mu
 checkpoint_config = dict(interval=num_iters_per_epoch, max_keep_ckpts=3)
 runner = dict(
     type='IterBasedRunner', max_iters=num_epochs * num_iters_per_epoch)
-# load_from='../StreamPETR/pretrained/stream_petr_vov_flash_800_bs2_seq_24e.pth'
-load_from='work_dirs/mini/E2_stream_petr_vov_flash_800_bs16_wk4_seq_24e/latest.pth'
+load_from=ckpt
+# load_from='work_dirs/mini/E2_stream_petr_vov_flash_800_bs16_wk4_seq_24e/latest.pth'
 # load_from=None
 resume_from=None

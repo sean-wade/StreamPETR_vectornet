@@ -24,13 +24,27 @@ from mmdet.datasets import replace_ImageToTensor
 import time
 import os.path as osp
 
+# from tools.onnx_utils import nuscenceData, PetrWrapper, get_onnx_model
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from PIL import Image
+# from matplotlib.axes import Axes
+# from typing import Tuple, List, Dict
+# from nuscenes.utils.geometry_utils import view_points, transform_matrix
+from tools.data_converter.waymoKitti_dataset import kitti_label_cv2, kitti_label_plt
+
+from visual_utils import draw_box2d, Box
+
+label_to_name = {0: 'Car', 1: 'Pedestrian', 2: 'Cyclist'}
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description='MMDet test (and eval) a model')
-    parser.add_argument('--config', help='test config file path', default="projects/configs/vectornet/stream_petr_vov_flash_800_bs1_wk0_seq_24e_debug.py")
-    # parser.add_argument('--config', help='test config file path', default="projects/configs/StreamPETR/stream_petr_vov_flash_800_bs2_seq_24e.py")
-    parser.add_argument('--checkpoint', help='checkpoint file', default="work_dirs/stream_petr_vov_flash_800_bs16_wk4_seq_24e_mini/latest.pth")
-    # parser.add_argument('--checkpoint', help='checkpoint file', default="../StreamPETR/pretrained/stream_petr_vov_flash_800_bs2_seq_24e.pth")
+    parser.add_argument('config',help='test config file path')
+    parser.add_argument('checkpoint', help='checkpoint file')
     parser.add_argument('--out', help='output result file in pickle format')
     parser.add_argument(
         '--fuse-conv-bn',
@@ -40,7 +54,6 @@ def parse_args():
     parser.add_argument(
         '--format-only',
         action='store_true',
-        # default=True,
         help='Format the output results without perform evaluation. It is'
         'useful when you want to format the result to a specific format and '
         'submit it to the test server')
@@ -48,7 +61,6 @@ def parse_args():
         '--eval',
         type=str,
         nargs='+',
-        default=['bbox'],
         help='evaluation metrics, which depends on the dataset, e.g., "bbox",'
         ' "segm", "proposal" for COCO, and "mAP", "recall" for PASCAL VOC')
     parser.add_argument('--show', action='store_true', help='show results')
@@ -166,7 +178,7 @@ def main():
     samples_per_gpu = 1
     if isinstance(cfg.data.test, dict):
         cfg.data.test.test_mode = True
-        samples_per_gpu = cfg.data.test.pop('samples_per_gpu', 1)       # data.test?
+        samples_per_gpu = cfg.data.test.pop('samples_per_gpu', 1)
         if samples_per_gpu > 1:
             # Replace 'ImageToTensor' to 'DefaultFormatBundle'
             cfg.data.test.pipeline = replace_ImageToTensor(
@@ -190,76 +202,110 @@ def main():
     # set random seeds
     if args.seed is not None:
         set_random_seed(args.seed, deterministic=args.deterministic)
-    
-    print("Test with batch_size = ", samples_per_gpu, "\n\n")
+
     # build the dataloader
-    dataset = build_dataset(cfg.data.test)
-    data_loader = build_dataloader(
-        dataset,
-        samples_per_gpu=samples_per_gpu,
-        workers_per_gpu=cfg.data.workers_per_gpu,
-        dist=distributed,
-        shuffle=False,
-        nonshuffler_sampler=cfg.data.nonshuffler_sampler,
-    )
+    dataset = build_dataset(cfg.data.val)
+    print("Annotation:{} total {} samples".format(cfg.data.val.ann_file, len(dataset)))
 
-    # build the model and load checkpoint
-    cfg.model.train_cfg = None
-    model = build_model(cfg.model, test_cfg=cfg.get('test_cfg'))
-    fp16_cfg = cfg.get('fp16', None)
-    if fp16_cfg is not None:
-        wrap_fp16_model(model)
-    checkpoint = load_checkpoint(model, args.checkpoint, map_location='cpu')
-    if args.fuse_conv_bn:
-        model = fuse_conv_bn(model)
-    # old versions did not save class info in checkpoints, this walkaround is
-    # for backward compatibility
-    if 'CLASSES' in checkpoint.get('meta', {}):
-        model.CLASSES = checkpoint['meta']['CLASSES']
-    else:
-        model.CLASSES = dataset.CLASSES
-    # palette for visualization in segmentation tasks
-    if 'PALETTE' in checkpoint.get('meta', {}):
-        model.PALETTE = checkpoint['meta']['PALETTE']
-    elif hasattr(dataset, 'PALETTE'):
-        # segmentation dataset has `PALETTE` attribute
-        model.PALETTE = dataset.PALETTE
+    # load result json
+    i_ckpt = 0
+    result_paths = ['test/stream_petr_r50_704x256_seq_428q_nui_24e_waymo/Mon_Oct_30_10_21_46_2023/results_waymokitti.json']
 
-    if not distributed:
-        # assert False
-        model = MMDataParallel(model, device_ids=[0])
-        outputs = single_gpu_test(model, data_loader, args.show, args.show_dir)
-    else:
-        model = MMDistributedDataParallel(
-            model.cuda(),
-            device_ids=[torch.cuda.current_device()],
-            broadcast_buffers=False)
-        outputs = custom_multi_gpu_test(model, data_loader, args.tmpdir,
-                                        args.gpu_collect)
+    results = mmcv.load(result_paths[i_ckpt])
 
-    rank, _ = get_dist_info()
-    if rank == 0:
-        if args.out:
-            print(f'\nwriting results to {args.out}')
-            assert False
-            #mmcv.dump(outputs['bbox_results'], args.out)
-        kwargs = {} if args.eval_options is None else args.eval_options
-        kwargs['jsonfile_prefix'] = osp.join('work_dirs/test', args.config.split(
-            '/')[-1].split('.')[-2], time.ctime().replace(' ', '_').replace(':', '_'))
-        if args.format_only:
-            dataset.format_results(outputs, **kwargs)
 
-        if args.eval:
-            eval_kwargs = cfg.get('evaluation', {}).copy()
-            # hard-code way to remove EvalHook args
-            for key in [
-                    'interval', 'tmpdir', 'start', 'gpu_collect', 'save_best',
-                    'rule'
-            ]:
-                eval_kwargs.pop(key, None)
-            eval_kwargs.update(dict(metric=args.eval, **kwargs))
+    def visualize_sample(idx, outpath):
+        data = dataset[idx]
+        print(data.keys())
+        for key in data.keys():
+            print("{}:{}".format(key, data[key]))
+        imgs = data['img'][0].data
+        lidar2imgs = data['lidar2img'][0].data
 
-            print(dataset.evaluate(outputs, **eval_kwargs))
+        pred_bboxes_3d = np.array(results[idx]['pts_bbox']['boxes_3d'])
+        pred_scores_3d = np.array(results[idx]['pts_bbox']['scores_3d'])
+        pred_labels_3d = np.array(results[idx]['pts_bbox']['labels_3d'])
+
+        # filter confidence
+        conf_th = 0.3
+        mask = [i for i, score in enumerate(pred_scores_3d) if score > conf_th]
+
+        pred_bboxes_3d = pred_bboxes_3d[mask]
+        pred_labels_3d = pred_labels_3d[mask]
+        pred_scores_3d = pred_scores_3d[mask]
+
+
+        # 3d box
+        print("Showing {} 3d box & bev...".format(cfg.dataset_type))
+        # waymo and nusc has different camera number
+        plt.rcParams['figure.figsize'] = (16, 9)
+        if cfg.dataset_type == 'CustomWaymoKittiDataset':
+            fig, axes = plt.subplots(2, 3)
+            camid_to_ax = {0: [0, 1], 1: [0, 0], 2: [0, 2], 3: [1, 0], 4: [1, 2]}
+            bevid = [1, 1]
+        elif cfg.dataset_type == 'CustomNuScenesDataset':
+            fig, axes = plt.subplots(3, 3)
+            camid_to_ax = {0: [0, 1], 1: [0, 2], 2: [0, 0], 3: [1, 1], 4: [1, 0], 5: [1, 2]}
+            bevid = [2, 1]
+            axes[2][0].axis('off')
+            axes[2][2].axis('off')
+        else:
+            raise ValueError('Not implement...')
+        # plot box in img
+        for i, img in enumerate(imgs):
+            img = np.transpose(img.numpy(), (1,2,0)).astype(np.uint8)   # disable NormalizeMultiviewImage
+            lidar2img = lidar2imgs[i].numpy()
+            for ith, box in enumerate(pred_bboxes_3d):
+                box = Box(box.tolist())
+                img = box.draw_2d_3dbox(img.copy(), view=lidar2img, colors=(kitti_label_cv2[label_to_name[pred_labels_3d[ith]]], kitti_label_cv2[label_to_name[pred_labels_3d[ith]]], kitti_label_cv2[label_to_name[pred_labels_3d[ith]]]))
+            img = img[..., ::-1]
+            axes[camid_to_ax[i][0]][camid_to_ax[i][1]].imshow(Image.fromarray(img))
+            axes[camid_to_ax[i][0]][camid_to_ax[i][1]].axis('off')
+        # plot bev
+        print(pred_bboxes_3d)
+        axes[bevid[0]][bevid[1]].plot(0, 0, 'x', color='red')
+        # plot distance circle
+        circle30 = patches.Circle((0, 0), radius=30, linewidth=1, linestyle='dashed', fill=False)
+        circle50 = patches.Circle((0, 0), radius=50, linewidth=1, linestyle='dashed', fill=False)
+        circle70 = patches.Circle((0, 0), radius=70, linewidth=1, linestyle='dashed', fill=False)
+        axes[bevid[0]][bevid[1]].add_patch(circle30)
+        axes[bevid[0]][bevid[1]].text(30, 0, '30m', ha='center', va='center')
+        axes[bevid[0]][bevid[1]].add_patch(circle50)
+        axes[bevid[0]][bevid[1]].text(50, 0, '50m', ha='center', va='center')
+        axes[bevid[0]][bevid[1]].add_patch(circle70)
+        axes[bevid[0]][bevid[1]].text(70, 0, '70m', ha='center', va='center')
+
+        for ith,box in enumerate(pred_bboxes_3d):
+            # nusc box: x,y,z,l,w,h,rot,vx,vy
+            if len(box.tolist()) == 9:
+                view_mat = np.eye(4)
+            # waymokitti box: x,y,z,l,w,h,rot
+            elif len(box.tolist()) == 7:
+                view_mat = np.array([0., -1., 1., 0.]).reshape(2, 2)
+            else:
+                raise ValueError('bbox3d not supported yet')
+            box = Box(box.tolist())
+            box.render(axes[bevid[0]][bevid[1]], pred_scores_3d[ith],view=view_mat, colors=(kitti_label_plt[label_to_name[pred_labels_3d[ith]]], kitti_label_plt[label_to_name[pred_labels_3d[ith]]], kitti_label_plt[label_to_name[pred_labels_3d[ith]]]))
+        axes[bevid[0]][bevid[1]].set_xlim((cfg.point_cloud_range[0], cfg.point_cloud_range[3]))
+        axes[bevid[0]][bevid[1]].set_ylim((cfg.point_cloud_range[1], cfg.point_cloud_range[4]))
+        print("\n")
+
+        plt.tight_layout()
+        fig.subplots_adjust(wspace=0, hspace=0)
+        # plt.savefig("result_waymo/pred_{}.jpg".format(str(idx).zfill(7)), dpi=500, bbox_inches='tight')
+        plt.savefig(outpath, dpi=500, bbox_inches='tight')
+
+    indices = [i for i in range(0,100,5)]
+    for idx in indices:
+        outpath = "result_waymo/pred_{}_{}th.jpg".format(str(idx).zfill(7), i_ckpt)
+        visualize_sample(idx, outpath)
+
+
+
+    # plt.show()
+    # plt.close()
+
+    # cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':

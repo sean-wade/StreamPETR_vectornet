@@ -6,6 +6,10 @@
 import argparse
 import mmcv
 import os
+import sys
+ROOT = os.getcwd()
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
 import torch
 import warnings
 from mmcv import Config, DictAction
@@ -14,7 +18,7 @@ from mmcv.parallel import MMDataParallel, MMDistributedDataParallel
 from mmcv.runner import (get_dist_info, init_dist, load_checkpoint,
                          wrap_fp16_model)
 
-from mmdet3d.apis import single_gpu_test
+# from mmdet3d.apis import single_gpu_test
 from mmdet3d.datasets import build_dataset
 from projects.mmdet3d_plugin.datasets.builder import build_dataloader
 from mmdet3d.models import build_model
@@ -24,13 +28,60 @@ from mmdet.datasets import replace_ImageToTensor
 import time
 import os.path as osp
 
+from os import path as osp
+
+import mmcv
+import torch
+from mmcv.image import tensor2imgs
+from mmdet3d.models import (Base3DDetector, Base3DSegmentor,
+                            SingleStageMono3DDetector)
+def single_gpu_test(model,
+                    data_loader,
+                    show=False,
+                    out_dir=None,
+                    show_score_thr=0.3):
+    """Test model with single gpu.
+
+    This method tests model with single gpu and gives the 'show' option.
+    By setting ``show=True``, it saves the visualization results under
+    ``out_dir``.
+
+    Args:
+        model (nn.Module): Model to be tested.
+        data_loader (nn.Dataloader): Pytorch data loader.
+        show (bool, optional): Whether to save viualization results.
+            Default: True.
+        out_dir (str, optional): The path to save visualization results.
+            Default: None.
+
+    Returns:
+        list[dict]: The prediction results.
+    """
+    model.eval()
+    results = []
+    dataset = data_loader.dataset
+    prog_bar = mmcv.ProgressBar(len(dataset))
+    for i, data in enumerate(data_loader):
+        with torch.no_grad():
+            result = model(return_loss=False, rescale=True, **data)
+
+        if show:
+            from analysis_tools.visualize_zxu.vis_utils import visualize_sample
+            visualize_sample(data, out_dir, result)
+        results.extend(result)
+
+        batch_size = len(result)
+        for _ in range(batch_size):
+            prog_bar.update()
+    return results
+
+
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description='MMDet test (and eval) a model')
-    parser.add_argument('--config', help='test config file path', default="projects/configs/vectornet/stream_petr_vov_flash_800_bs1_wk0_seq_24e_debug.py")
-    # parser.add_argument('--config', help='test config file path', default="projects/configs/StreamPETR/stream_petr_vov_flash_800_bs2_seq_24e.py")
-    parser.add_argument('--checkpoint', help='checkpoint file', default="work_dirs/stream_petr_vov_flash_800_bs16_wk4_seq_24e_mini/latest.pth")
-    # parser.add_argument('--checkpoint', help='checkpoint file', default="../StreamPETR/pretrained/stream_petr_vov_flash_800_bs2_seq_24e.pth")
+    parser = argparse.ArgumentParser(description='MMDet test (and eval) a model')
+    parser.add_argument('--config', help='test config file path', default="projects/configs/vectornet/stream_petr_vov_flash_800_bs16_wk4_seq_24e_mini.py")
+    parser.add_argument('--checkpoint', help='checkpoint file', default="work_dirs/stream_petr_vov_flash_800_bs16_wk4_seq_24e_all/latest.pth")
+    # parser.add_argument('--config',default="projects/configs/StreamPETR/stream_petr_vov_flash_800_bs2_seq_24e.py", help='test config file path')
+    # parser.add_argument('--checkpoint', default="ckpts/stream_petr_vov_flash_800_bs2_seq_24e.pth",  help='checkpoint file')
     parser.add_argument('--out', help='output result file in pickle format')
     parser.add_argument(
         '--fuse-conv-bn',
@@ -39,19 +90,18 @@ def parse_args():
         'the inference speed')
     parser.add_argument(
         '--format-only',
+        default=True,
         action='store_true',
-        # default=True,
-        help='Format the output results without perform evaluation. It is'
+        help='Format the output results without perform fevaluation. It is'
         'useful when you want to format the result to a specific format and '
         'submit it to the test server')
     parser.add_argument(
         '--eval',
         type=str,
         nargs='+',
-        default=['bbox'],
         help='evaluation metrics, which depends on the dataset, e.g., "bbox",'
         ' "segm", "proposal" for COCO, and "mAP", "recall" for PASCAL VOC')
-    parser.add_argument('--show', action='store_true', help='show results')
+    parser.add_argument('--show', default=True, help='show results')
     parser.add_argument(
         '--show-dir', help='directory where results will be saved')
     parser.add_argument(
@@ -133,6 +183,11 @@ def main():
         from mmcv.utils import import_modules_from_strings
         import_modules_from_strings(**cfg['custom_imports'])
 
+    if args.show:
+        args.show_dir = osp.join('./work_dirs',
+                                 osp.splitext(osp.basename(args.config))[0],
+                                'result_plot/')
+        mmcv.mkdir_or_exist(osp.abspath(args.show_dir))
     # import modules from plguin/xx, registry will be updated
     if hasattr(cfg, 'plugin'):
         if cfg.plugin:
@@ -166,7 +221,7 @@ def main():
     samples_per_gpu = 1
     if isinstance(cfg.data.test, dict):
         cfg.data.test.test_mode = True
-        samples_per_gpu = cfg.data.test.pop('samples_per_gpu', 1)       # data.test?
+        samples_per_gpu = cfg.data.test.pop('samples_per_gpu', 1)
         if samples_per_gpu > 1:
             # Replace 'ImageToTensor' to 'DefaultFormatBundle'
             cfg.data.test.pipeline = replace_ImageToTensor(
@@ -190,8 +245,7 @@ def main():
     # set random seeds
     if args.seed is not None:
         set_random_seed(args.seed, deterministic=args.deterministic)
-    
-    print("Test with batch_size = ", samples_per_gpu, "\n\n")
+
     # build the dataloader
     dataset = build_dataset(cfg.data.test)
     data_loader = build_dataloader(
@@ -200,7 +254,7 @@ def main():
         workers_per_gpu=cfg.data.workers_per_gpu,
         dist=distributed,
         shuffle=False,
-        nonshuffler_sampler=cfg.data.nonshuffler_sampler,
+        # nonshuffler_sampler=cfg.data.nonshuffler_sampler,# 分布式场景下的数据集采样能力，加速训练的
     )
 
     # build the model and load checkpoint
@@ -230,12 +284,13 @@ def main():
         model = MMDataParallel(model, device_ids=[0])
         outputs = single_gpu_test(model, data_loader, args.show, args.show_dir)
     else:
-        model = MMDistributedDataParallel(
-            model.cuda(),
-            device_ids=[torch.cuda.current_device()],
-            broadcast_buffers=False)
-        outputs = custom_multi_gpu_test(model, data_loader, args.tmpdir,
-                                        args.gpu_collect)
+        pass
+        # model = MMDistributedDataParallel(
+        #     model.cuda(),
+        #     device_ids=[torch.cuda.current_device()],
+        #     broadcast_buffers=False)
+        # outputs = custom_multi_gpu_test(model, data_loader, args.tmpdir,
+                                        # args.gpu_collect)
 
     rank, _ = get_dist_info()
     if rank == 0:
@@ -244,7 +299,7 @@ def main():
             assert False
             #mmcv.dump(outputs['bbox_results'], args.out)
         kwargs = {} if args.eval_options is None else args.eval_options
-        kwargs['jsonfile_prefix'] = osp.join('work_dirs/test', args.config.split(
+        kwargs['jsonfile_prefix'] = osp.join('work_dirs', args.config.split(
             '/')[-1].split('.')[-2], time.ctime().replace(' ', '_').replace(':', '_'))
         if args.format_only:
             dataset.format_results(outputs, **kwargs)

@@ -23,11 +23,12 @@ do_prediction = True
 num_gpus = 1
 batch_size = 16
 num_workers = 4
-num_epochs = 100 if use_mini else 24
+num_epochs = 200 if use_mini else 50
 base_lr = 5e-3
 scores_threshold = 0.35
 # num_iters_per_epoch = 323 // (num_gpus * batch_size)
 num_iters_per_epoch = 323 // (num_gpus * batch_size) if use_mini else 28130 // (num_gpus * batch_size)
+ckpt = 'work_dirs/stream_petr_vov_flash_800_bs16_wk4_seq_24e_mini/latest.pth'
 
 # dataset_type = 'CustomNuScenesDataset'
 dataset_type = 'StreamPredNuScenesDataset'
@@ -328,7 +329,7 @@ find_unused_parameters=False #### when use checkpoint, find_unused_parameters mu
 checkpoint_config = dict(interval=num_iters_per_epoch, max_keep_ckpts=3)
 runner = dict(
     type='IterBasedRunner', max_iters=num_epochs * num_iters_per_epoch)
-load_from='/mnt/se/StreamPETR_VIP3D/ckpts/stream_petr_vov_flash_800_bs2_seq_24e.pth'
+load_from=ckpt
 # load_from='work_dirs/mini/E2_stream_petr_vov_flash_800_bs16_wk4_seq_24e/latest.pth'
 # load_from=None
 resume_from=None
