@@ -661,8 +661,18 @@ class StreamPredNuScenesDataset(NuScenesDataset):
                     curr_id_pf_dict[ind]['future_traj'][f - index - 1] = point[0], point[1]
                     curr_id_pf_dict[ind]['future_traj_is_valid'][f - index - 1] = 1
 
-                    normalizer = utils.Normalizer(curr_id_pf_dict[ind]['past_traj'][-1,0], curr_id_pf_dict[ind]['past_traj'][-1,1], 0.0)
-                    curr_id_pf_dict[ind]['future_traj_relative'][f - index - 1] = normalizer(point[:2])
+                    # diff with orig point
+                    # normalizer = utils.Normalizer(curr_id_pf_dict[ind]['past_traj'][-1,0], curr_id_pf_dict[ind]['past_traj'][-1,1], 0.0)
+                    # curr_id_pf_dict[ind]['future_traj_relative'][f - index - 1] = normalizer(point[:2])
+                    curr_id_pf_dict[ind]['future_traj_relative'][f - index - 1] = curr_id_pf_dict[ind]['future_traj'][f - index - 1] - curr_id_pf_dict[ind]['past_traj'][-1]
+
+                    ## diff @ every point
+                    # if f - index - 1 == 0:
+                    #     curr_id_pf_dict[ind]['future_traj_relative'][f - index - 1] = point[0] - curr_id_pf_dict[ind]['past_traj'][-1,0], \
+                    #         point[1] - curr_id_pf_dict[ind]['past_traj'][-1,1]
+                    # else:
+                    #     curr_id_pf_dict[ind]['future_traj_relative'][f - index - 1] = point[0] - curr_id_pf_dict[ind]['future_traj'][f - index - 2, 0], \
+                    #         point[1] - curr_id_pf_dict[ind]['future_traj'][f - index - 2, 1]
 
         data_dict['pred_mapping'].update(
             dict(

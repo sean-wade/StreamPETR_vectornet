@@ -78,8 +78,8 @@ def single_gpu_test(model,
 
 def parse_args():
     parser = argparse.ArgumentParser(description='MMDet test (and eval) a model')
-    parser.add_argument('--config', help='test config file path', default="projects/configs/vectornet/stream_petr_vov_flash_800_bs16_wk4_seq_24e_mini.py")
-    parser.add_argument('--checkpoint', help='checkpoint file', default="work_dirs/stream_petr_vov_flash_800_bs16_wk4_seq_24e_all/latest.pth")
+    parser.add_argument('--config', help='test config file path', default="projects/configs/vectornet/stream_petr_vov_flash_800_bs16_wk4_seq_24e_all_rel.py")
+    parser.add_argument('--checkpoint', help='checkpoint file', default="work_dirs/stream_petr_vov_flash_800_bs16_wk4_seq_24e_all_rel/latest.pth")
     # parser.add_argument('--config',default="projects/configs/StreamPETR/stream_petr_vov_flash_800_bs2_seq_24e.py", help='test config file path')
     # parser.add_argument('--checkpoint', default="ckpts/stream_petr_vov_flash_800_bs2_seq_24e.pth",  help='checkpoint file')
     parser.add_argument('--out', help='output result file in pickle format')

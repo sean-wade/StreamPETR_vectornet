@@ -24,15 +24,15 @@ num_gpus = 1
 batch_size = 16
 num_workers = 4
 num_epochs = 200 if use_mini else 50
-base_lr = 5e-3
+base_lr = 2e-4
 scores_threshold = 0.35
 # num_iters_per_epoch = 323 // (num_gpus * batch_size)
 num_iters_per_epoch = 323 // (num_gpus * batch_size) if use_mini else 28130 // (num_gpus * batch_size)
-ckpt = 'work_dirs/stream_petr_vov_flash_800_bs16_wk4_seq_24e_mini/latest.pth'
+ckpt = 'stream_petr_vov_flash_800_bs2_seq_24e.pth'
 
 # dataset_type = 'CustomNuScenesDataset'
 dataset_type = 'StreamPredNuScenesDataset'
-data_root = '/mnt/data/dataset/nuScenes/nuscenes_mini/' if use_mini else '/mnt/data/dataset/nuScenes/nuscenes'
+data_root = '/mnt/data/dataset/nuScenes/nuscenes_mini/' if use_mini else '/mnt/data/dataset/nuScenes/nuscenes/'
 
 queue_length = 1
 num_frame_losses = 1
@@ -53,6 +53,12 @@ model = dict(
     num_frame_losses=num_frame_losses,
     use_grid_mask=True,
     scores_threshold = scores_threshold,
+
+    train_img = False,
+    train_roi_head = False,
+    train_pts_bbox_head = False,
+    train_predictor = True,
+
     img_backbone=dict(
         type='VoVNetCP', ###use checkpoint to save memory
         spec_name='V-99-eSE',

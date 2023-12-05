@@ -218,16 +218,16 @@ def main():
     # zh, don't know if load ckpt before or after this.
     # model.init_weights()
 
-    # # Freeze all submodules except prediction
-    for name, param in model.named_parameters():
-        if 'pts_bbox_head' in name or \
-                'img_backbone' in name or \
-                'img_neck' in name or \
-                'img_roi_head' in name:
-            param.requires_grad = False
-            logger.info("Not training layer: [%s]"%name)
-        else:
-            logger.info("Training layer: [%s]"%name)
+    # # # Freeze all submodules except prediction
+    # for name, param in model.named_parameters():
+    #     if 'pts_bbox_head' in name or \
+    #             'img_backbone' in name or \
+    #             'img_neck' in name or \
+    #             'img_roi_head' in name:
+    #         param.requires_grad = False
+    #         logger.info("Not training layer: [%s]"%name)
+    #     else:
+    #         logger.info("Training layer: [%s]"%name)
 
 
     if cfg.get('SyncBN', False):

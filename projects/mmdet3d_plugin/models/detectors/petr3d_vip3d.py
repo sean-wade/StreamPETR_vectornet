@@ -60,6 +60,10 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
                  add_branch=False,
                  add_branch_attention=None,
                  predictor=None,
+                 train_img = True,
+                 train_roi_head = True,
+                 train_pts_bbox_head = True,
+                 train_predictor = True,
                  collect_keys_pred=['pred_mapping', 'pred_polyline_spans', 'pred_matrix', 'future_traj', 'future_traj_is_valid', 'past_traj', 'past_traj_is_valid'],
                  ):
         super(Petr3D_Vip3d, self).__init__(pts_voxel_layer, pts_voxel_encoder,
@@ -102,6 +106,26 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
                 # self.add_branch_attention = build_from_cfg(pred_utils.get_attention_cfg(), TRANSFORMER_LAYER)
                 # self.add_branch_attention = build_from_cfg(pts_bbox_head["transformer"]["decoder"], TRANSFORMER_LAYER_SEQUENCE)
                 self.add_branch_attention = build_from_cfg(add_branch_attention, TRANSFORMER_LAYER)
+        
+        self.train_img = train_img
+        self.train_roi_head = train_roi_head
+        self.train_pts_bbox_head = train_pts_bbox_head
+        self.train_predictor = train_predictor
+        
+        no_grad_subnet = []
+        if not self.train_img:
+            no_grad_subnet.append(self.img_backbone)
+            no_grad_subnet.append(self.img_neck)
+        if not self.train_roi_head:
+            no_grad_subnet.append(self.img_roi_head)
+        if not self.train_pts_bbox_head:
+            no_grad_subnet.append(self.pts_bbox_head)
+        if not self.train_predictor:
+            no_grad_subnet.append(self.predictor)
+        if no_grad_subnet:
+            for subnet in no_grad_subnet:
+                for param in subnet.parameters():
+                    param.requires_grad = False
 
 
     @force_fp32(apply_to=('img'))
@@ -337,8 +361,6 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
                     }
                 else:
                     losses['pred_loss'] = pred_loss if pred_loss is not None else torch.zeros(1)
-
-            
             return losses
         else:
             return None
@@ -361,10 +383,6 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
             past_traj            = data['past_traj'][b]
             past_traj_is_valid   = data['past_traj_is_valid'][b]
 
-            pred_indexes = pred_feats["pred_inds"][b][pred_feats["pred_inds"][b]>0]
-            pred_reference_points = pred_reference_points[pred_indexes]
-
-            
             pred_query = pred_feats["query"][b][pred_feats["pred_inds"][b]>0].contiguous()
             pred_reference_points = pred_feats['reference_points'][b][pred_feats["pred_inds"][b]>0].contiguous()
             pred_reference_points = pred_utils.reference_points_lidar_to_relative(pred_reference_points, self.pts_bbox_head.pc_range)
@@ -397,7 +415,6 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
             total_pred_loss = total_pred_loss + pred_loss
             batch_pred_outputs.append(pred_output['pred_outputs'].squeeze())
             batch_pred_probs.append(pred_output['pred_probs'].squeeze())
-
 
         outs.update(
             pred_outputs = batch_pred_outputs,
@@ -509,9 +526,13 @@ class Petr3D_Vip3d(MVXTwoStageDetector):
         if self.relative_pred:
             centers_2d = bbox_list[0][0].center[:,:2].cpu().numpy()
             for j in range(len(centers_2d)):
-                normalizer = pred_utils.Normalizer(centers_2d[j][0], centers_2d[j][1], 0.0)
-                for k in range(len(pred_outputs['pred_outputs'][0][j])):
-                    pred_outputs['pred_outputs'][0][j][k] = normalizer(pred_outputs['pred_outputs'][0][j][k], reverse=True)
+                # pred_outputs['pred_outputs'][0][j] = centers_2d[j] + pred_outputs['pred_outputs'][0][j].cumsum(axis=1)
+                
+                # normalizer = pred_utils.Normalizer(centers_2d[j][0], centers_2d[j][1], 0.0)
+                # for k in range(len(pred_outputs['pred_outputs'][0][j])):
+                #     pred_outputs['pred_outputs'][0][j][k] = normalizer(pred_outputs['pred_outputs'][0][j][k], reverse=True)
+
+                pred_outputs['pred_outputs'][0][j] = pred_outputs['pred_outputs'][0][j] + centers_2d[j]
         
         bbox_list[0].append(pred_outputs['pred_outputs'][0])
         bbox_list[0].append(pred_outputs['pred_probs'][0])

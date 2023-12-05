@@ -750,7 +750,6 @@ class StreamPETRVIP3DHead(AnchorFreeHead):
             labels[pos_inds] = gt_labels[sampling_result.pos_assigned_gt_inds]
             pred_inds[pos_inds] = sampling_result.pos_assigned_gt_inds+1
         if self.do_pred:
-
             return (labels, label_weights, bbox_targets, bbox_weights, pos_inds, neg_inds, pred_inds)
         else:
             return (labels, label_weights, bbox_targets, bbox_weights, pos_inds, neg_inds)
